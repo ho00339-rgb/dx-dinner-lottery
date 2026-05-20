@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>운명의 4인방 — DX혁신실 화합의 밤</title>
+<link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Bebas+Neue&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="container">
+
+  <!-- HEADER -->
+  <div class="app-header">
+    <div class="eyebrow">DX혁신실 · 화합의 밤</div>
+    <h1 class="title">운명의 4인방</h1>
+    <div class="tagline">FATE DECIDES TONIGHT'S DINNER</div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="lottery">추첨</button>
+    <button class="tab-btn" data-tab="history">이력</button>
+    <button class="tab-btn" data-tab="members">멤버</button>
+  </div>
+
+  <!-- LOTTERY TAB -->
+  <div class="tab-panel active" id="tab-lottery">
+
+    <!-- MODE TOGGLE -->
+    <div class="mode-toggle">
+      <button class="mode-btn active" data-mode="different">
+        <span class="mode-name">MIX</span>
+        <span class="mode-sub">선후배 회식 · 직급 섞임</span>
+        <span class="mode-meta">매월 2주차 · 3팀 × 4인</span>
+      </button>
+      <button class="mode-btn" data-mode="similar">
+        <span class="mode-name">PEER</span>
+        <span class="mode-sub">또래 회식 · 비슷한 직급</span>
+        <span class="mode-meta">매월 4주차 · 상/중/하 1팀씩</span>
+      </button>
+    </div>
+
+    <!-- ROUND INFO -->
+    <div class="round-info">
+      <div class="info-card">
+        <div class="info-label">ROUND</div>
+        <div class="info-value" id="roundNum">#1</div>
+        <div class="info-sub" id="roundDate"></div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">CONFIRMED</div>
+        <div class="info-value" id="confirmedCount">0</div>
+        <div class="info-sub">지금까지 확정된 회차</div>
+      </div>
+      <div class="info-card">
+        <div class="info-label">STATUS</div>
+        <div class="info-value" id="statusText">대기</div>
+        <div class="info-sub" id="statusSub">SPIN을 눌러주세요</div>
+      </div>
+    </div>
+
+    <!-- CABINET -->
+    <div class="cabinet">
+      <div id="teamRows"></div>
+      <div class="controls">
+        <button class="spin-btn" id="spinBtn">SPIN ↻</button>
+      </div>
+    </div>
+
+    <!-- RESULTS -->
+    <div class="results-section" id="resultsSection">
+      <div class="results-title">오늘의 4인방 12명이 결정되었습니다</div>
+      <div class="results-sub">FATE HAS SPOKEN</div>
+      <div class="results-teams" id="resultsTeams"></div>
+
+      <div class="admin-bar">
+        <div class="admin-text">
+          결과를 확인하고 이 회차를 확정하면 이력에 저장됩니다.<br>
+          확정하면 다음 회차 번호로 넘어갑니다.
+        </div>
+        <div class="admin-buttons">
+          <button class="btn btn-ghost" id="rerollBtn">다시 추첨</button>
+          <button class="btn btn-primary" id="confirmBtn">이 회차 확정 ✓</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- HISTORY TAB -->
+  <div class="tab-panel" id="tab-history">
+    <div id="historyContent"></div>
+  </div>
+
+  <!-- MEMBERS TAB -->
+  <div class="tab-panel" id="tab-members">
+    <div class="stats-bar" id="statsBar"></div>
+    <div class="members-grid" id="membersGrid"></div>
+  </div>
+
+</div>
+
+<canvas id="confetti"></canvas>
+<div class="toast" id="toast"></div>
+
+<!-- 데이터 먼저, 그 다음 앱 로직 -->
+<script src="data.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
