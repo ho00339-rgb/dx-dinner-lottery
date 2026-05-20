@@ -369,14 +369,37 @@ h1.title {
 .reel-label {
   text-align: center;
   font-family: 'Bebas Neue', sans-serif;
-  font-size: 11px;
-  letter-spacing: 0.15em;
+  font-size: 15px;
+  letter-spacing: 0.18em;
   color: var(--neon-cyan);
-  text-shadow: 0 0 8px color-mix(in srgb, var(--neon-cyan) 55%, transparent);
-  margin-bottom: 6px;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--neon-cyan) 60%, transparent);
+  margin-bottom: 8px;
   white-space: nowrap;
   font-weight: 700;
+  transition: color 0.3s, text-shadow 0.3s;
 }
+
+/* 보충 발생 시 슬롯 헤더가 "원래 그룹 → 실제 그룹"으로 강조 표시 */
+.reel-wrap.is-substitute .reel-label {
+  color: var(--neon-purple);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--neon-purple) 75%, transparent);
+}
+
+.reel-wrap .sub-arrow {
+  display: block;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--neon-purple);
+  text-shadow: 0 0 8px color-mix(in srgb, var(--neon-purple) 65%, transparent);
+  margin-top: 2px;
+  margin-bottom: 6px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.4s;
+}
+
+.reel-wrap.is-substitute .sub-arrow { opacity: 1; }
 
 .drum {
   position: relative;
@@ -937,7 +960,8 @@ canvas#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; 
   .team-row { grid-template-columns: 70px 1fr; gap: 8px; }
   .team-label .tl-num { font-size: 26px; }
   .team-label .tl-name { font-size: 10px; }
-  .reel-label { font-size: 10px; letter-spacing: 0.08em; }
+  .reel-label { font-size: 13px; letter-spacing: 0.1em; }
+  .reel-wrap .sub-arrow { font-size: 10px; }
   .drum { height: 96px; }
   .drum::before, .drum::after { height: 32px; }
   .indicator { top: 32px; height: 32px; }

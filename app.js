@@ -92,8 +92,14 @@ function drawDifferentMode() {
 }
 
 function drawDifferentTeam(usedNames, cooldown) {
-  const groupsShuffled = shuffle([...GROUPS]);
-  return backtrackDifferent(groupsShuffled, 0, [], new Set(), usedNames, cooldown);
+  // 인원 적은 그룹부터 처리: 정보보호처럼 빠듯한 그룹이 자기 슬롯을 먼저 차지하도록.
+  // 그러면 TF처럼 여유 많은 그룹은 마지막에 남은 티어로 채워져서, 보충은 정말 부족할 때만 발생.
+  const groupsOrdered = [...GROUPS].sort((a, b) => {
+    const ca = MEMBERS.filter(m => m.group === a && !cooldown.has(m.name) && !usedNames.has(m.name)).length;
+    const cb = MEMBERS.filter(m => m.group === b && !cooldown.has(m.name) && !usedNames.has(m.name)).length;
+    return ca - cb;
+  });
+  return backtrackDifferent(groupsOrdered, 0, [], new Set(), usedNames, cooldown);
 }
 
 // 백트래킹: 4그룹 × 4티어 조합을 안정적으로 찾기
@@ -219,8 +225,9 @@ function renderTeamRows() {
       </div>
       <div class="team-reels">
         ${GROUPS.map((g, colIdx) => `
-          <div class="reel-wrap">
+          <div class="reel-wrap" data-row="${rowIdx}" data-col="${colIdx}" data-slot-group="${g}">
             <div class="reel-label">${GROUP_LABEL[g]}</div>
+            <div class="sub-arrow">↓ 보충</div>
             <div class="drum" data-row="${rowIdx}" data-col="${colIdx}">
               <div class="strip" data-row="${rowIdx}" data-col="${colIdx}"></div>
               <div class="indicator"></div>
@@ -269,6 +276,12 @@ async function animateDraw(result) {
   const finalY = getFinalY();
 
   document.querySelectorAll('.drum').forEach(d => d.classList.remove('locked', 'substitute'));
+  document.querySelectorAll('.reel-wrap').forEach(w => {
+    w.classList.remove('is-substitute');
+    const label = w.querySelector('.reel-label');
+    const slotGroup = w.dataset.slotGroup;
+    if (label && slotGroup) label.textContent = GROUP_LABEL[slotGroup];
+  });
 
   const promises = [];
 
@@ -280,6 +293,7 @@ async function animateDraw(result) {
 
       const strip = document.querySelector(`.strip[data-row="${rowIdx}"][data-col="${colIdx}"]`);
       const drum = document.querySelector(`.drum[data-row="${rowIdx}"][data-col="${colIdx}"]`);
+      const reelWrap = document.querySelector(`.reel-wrap[data-row="${rowIdx}"][data-col="${colIdx}"]`);
       if (!strip || !drum) continue;
 
       buildStripWithChosen(strip, member);
@@ -297,8 +311,17 @@ async function animateDraw(result) {
           });
 
           setTimeout(() => {
-            if (member.substituteFor) drum.classList.add('substitute');
-            else drum.classList.add('locked');
+            if (member.substituteFor) {
+              drum.classList.add('substitute');
+              if (reelWrap) {
+                reelWrap.classList.add('is-substitute');
+                const label = reelWrap.querySelector('.reel-label');
+                // "원래 슬롯그룹 → 실제 멤버그룹"으로 라벨 갱신해서 조직 바뀜이 한눈에 보이게
+                if (label) label.textContent = `${GROUP_LABEL[member.substituteFor]} → ${GROUP_LABEL[member.group]}`;
+              }
+            } else {
+              drum.classList.add('locked');
+            }
             flashScreen(0.12);
             lockBurst(drum, member.substituteFor ? '#b026ff' : '#ffcb05');
             resolve();
