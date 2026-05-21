@@ -324,7 +324,7 @@ h1.title {
   grid-template-columns: 90px 1fr;
   gap: 14px;
   align-items: stretch;
-  margin-bottom: 16px;
+  margin-bottom: 28px;
 }
 
 .team-row:last-child { margin-bottom: 0; }
@@ -385,6 +385,24 @@ h1.title {
   text-shadow: 0 0 12px color-mix(in srgb, var(--neon-purple) 75%, transparent);
 }
 
+/* 인원 조정 이벤트 발생 시 — 핑크/퍼플 그라데이션 + 깜빡임 */
+.reel-wrap.is-rebalanced .reel-label {
+  background: linear-gradient(90deg, var(--neon-purple), var(--neon-pink), var(--neon-purple));
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: none;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--neon-purple) 80%, transparent));
+  animation: rebalance-label-shimmer 2s linear infinite;
+  font-size: 16px;
+}
+
+@keyframes rebalance-label-shimmer {
+  0% { background-position: 0% center; }
+  100% { background-position: 200% center; }
+}
+
 .reel-wrap .sub-arrow {
   display: block;
   font-family: 'Bebas Neue', sans-serif;
@@ -442,15 +460,116 @@ h1.title {
 .drum.locked .indicator {
   border-color: var(--neon-gold);
   box-shadow:
-    0 0 26px color-mix(in srgb, var(--neon-gold) 85%, transparent),
-    inset 0 0 28px color-mix(in srgb, var(--neon-gold) 22%, transparent);
+    0 0 32px color-mix(in srgb, var(--neon-gold) 95%, transparent),
+    0 0 64px color-mix(in srgb, var(--neon-gold) 45%, transparent),
+    inset 0 0 32px color-mix(in srgb, var(--neon-gold) 28%, transparent);
+  animation: lock-pulse 1.4s ease-out infinite;
 }
 
 .drum.substitute .indicator {
   border-color: var(--neon-purple);
   box-shadow:
-    0 0 26px color-mix(in srgb, var(--neon-purple) 85%, transparent),
-    inset 0 0 28px color-mix(in srgb, var(--neon-purple) 22%, transparent);
+    0 0 32px color-mix(in srgb, var(--neon-purple) 95%, transparent),
+    0 0 64px color-mix(in srgb, var(--neon-purple) 50%, transparent),
+    inset 0 0 32px color-mix(in srgb, var(--neon-purple) 28%, transparent);
+  animation: lock-pulse 1.4s ease-out infinite;
+}
+
+.drum.rebalanced {
+  animation: rebalance-shake 0.6s ease-out;
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 0 50px color-mix(in srgb, var(--neon-purple) 70%, transparent),
+    0 0 100px color-mix(in srgb, var(--neon-pink) 35%, transparent);
+}
+
+/* 1차 정지 — "인원조정"에 멈춘 상태. 두 번째 회전 시작 전까지 강하게 깜빡임 */
+.drum.rebalance-pending {
+  animation: rebalance-pending-pulse 0.85s ease-in-out;
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    0 0 60px color-mix(in srgb, var(--neon-purple) 90%, transparent),
+    0 0 120px color-mix(in srgb, var(--neon-pink) 55%, transparent);
+}
+
+.drum.rebalance-pending .indicator {
+  border-color: var(--neon-purple);
+  border-width: 3px;
+  box-shadow:
+    0 0 36px var(--neon-purple),
+    0 0 72px color-mix(in srgb, var(--neon-pink) 60%, transparent),
+    inset 0 0 40px color-mix(in srgb, var(--neon-purple) 55%, transparent);
+}
+
+.drum.rebalance-pending .cell.is-target {
+  color: #fff;
+  text-shadow:
+    0 0 14px var(--neon-purple),
+    0 0 28px var(--neon-pink),
+    0 0 48px var(--neon-purple);
+  animation: rebalance-cell-blink 0.28s ease-in-out infinite alternate;
+}
+
+@keyframes rebalance-pending-pulse {
+  0%, 100% { transform: scale(1); }
+  20% { transform: scale(1.06); }
+  60% { transform: scale(0.98); }
+}
+
+@keyframes rebalance-cell-blink {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0.65; transform: scale(1.08); }
+}
+
+/* 2차 회전(TF 풀)일 때 인디케이터 색은 핑크로 차별화 */
+.drum.spinning-tf .indicator {
+  border-color: var(--neon-pink);
+  box-shadow:
+    0 0 24px color-mix(in srgb, var(--neon-pink) 80%, transparent),
+    inset 0 0 26px color-mix(in srgb, var(--neon-pink) 22%, transparent);
+}
+
+.drum.rebalanced .indicator {
+  border-color: var(--neon-purple);
+  border-width: 2.5px;
+  box-shadow:
+    0 0 40px var(--neon-purple),
+    0 0 80px color-mix(in srgb, var(--neon-pink) 50%, transparent),
+    inset 0 0 40px color-mix(in srgb, var(--neon-purple) 45%, transparent);
+}
+
+@keyframes lock-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.75; }
+}
+
+@keyframes rebalance-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-3px, 2px) rotate(-0.5deg); }
+  40% { transform: translate(3px, -2px) rotate(0.5deg); }
+  60% { transform: translate(-2px, 1px); }
+  80% { transform: translate(2px, -1px); }
+}
+
+/* 회전 중 — 살짝 모션블러 느낌 + 강한 글로우 */
+.drum.spinning {
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 28px color-mix(in srgb, var(--neon-pink) 35%, transparent);
+}
+
+.drum.spinning .strip {
+  filter: blur(0.6px);
+}
+
+.drum.spinning .indicator {
+  border-color: var(--neon-cyan);
+  box-shadow:
+    0 0 22px color-mix(in srgb, var(--neon-cyan) 70%, transparent),
+    inset 0 0 24px color-mix(in srgb, var(--neon-cyan) 18%, transparent);
 }
 
 .strip {
@@ -476,12 +595,175 @@ h1.title {
 
 .drum.locked .cell.is-target {
   color: var(--neon-gold);
-  text-shadow: 0 0 14px color-mix(in srgb, var(--neon-gold) 90%, transparent);
+  text-shadow:
+    0 0 14px color-mix(in srgb, var(--neon-gold) 95%, transparent),
+    0 0 28px color-mix(in srgb, var(--neon-gold) 60%, transparent);
+  animation: target-pop 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.4);
 }
 
 .drum.substitute .cell.is-target {
   color: var(--neon-purple);
-  text-shadow: 0 0 14px color-mix(in srgb, var(--neon-purple) 90%, transparent);
+  text-shadow:
+    0 0 14px color-mix(in srgb, var(--neon-purple) 95%, transparent),
+    0 0 28px color-mix(in srgb, var(--neon-purple) 60%, transparent);
+  animation: target-pop 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.4);
+}
+
+.drum.rebalanced .cell.is-target {
+  color: var(--neon-purple);
+  text-shadow:
+    0 0 16px var(--neon-purple),
+    0 0 32px color-mix(in srgb, var(--neon-pink) 70%, transparent),
+    0 0 60px color-mix(in srgb, var(--neon-purple) 50%, transparent);
+  animation: target-pop 0.55s cubic-bezier(0.18, 0.89, 0.32, 1.5);
+}
+
+@keyframes target-pop {
+  0% { transform: scale(0.75); opacity: 0.4; }
+  60% { transform: scale(1.18); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* 인원조정 가상 셀 — 회전하는 동안 보라색으로 눈에 띄게 */
+.cell.is-rebalance {
+  color: var(--neon-purple);
+  font-size: 20px;
+  letter-spacing: 0.05em;
+  text-shadow:
+    0 0 12px var(--neon-purple),
+    0 0 24px color-mix(in srgb, var(--neon-pink) 60%, transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--neon-purple) 18%, transparent), transparent);
+}
+
+/* ===== 조장 선발 — 드럼 위로 슬라이딩하는 커서 ===== */
+.team-reels { position: relative; }
+
+.leader-cursor {
+  position: absolute;
+  top: -28px;
+  bottom: -8px;
+  left: 0;
+  width: 0;
+  pointer-events: none;
+  z-index: 4;
+  opacity: 0;
+  transform: translateX(-9999px) translateX(-50%);
+}
+
+.team-row.leader-active .leader-cursor { opacity: 1; }
+
+/* ♛ 마커가 드럼 위에 떠있음 */
+.leader-cursor::before {
+  content: '♛';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 26px;
+  color: var(--neon-gold);
+  text-shadow:
+    0 0 14px var(--neon-gold),
+    0 0 28px color-mix(in srgb, var(--neon-pink) 70%, transparent);
+  filter: drop-shadow(0 0 10px var(--neon-gold));
+  animation: crown-bob 1s ease-in-out infinite;
+}
+
+/* 세로 빔 — 드럼 위로 떨어지는 황금 라인 */
+.leader-cursor::after {
+  content: '';
+  position: absolute;
+  top: 28px;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  background: linear-gradient(180deg, var(--neon-gold), color-mix(in srgb, var(--neon-pink) 60%, transparent) 60%, transparent);
+  box-shadow:
+    0 0 16px var(--neon-gold),
+    0 0 32px color-mix(in srgb, var(--neon-pink) 60%, transparent);
+  border-radius: 3px;
+}
+
+@keyframes crown-bob {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-4px); }
+}
+
+/* 커서가 휩쓸고 지나가는 드럼 — 시안 펄스 */
+.drum.leader-sweep {
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 22px color-mix(in srgb, var(--neon-cyan) 55%, transparent);
+  transition: box-shadow 0.18s ease-out;
+}
+
+/* 최종 조장 드럼 — 황금 강조 */
+.drum.leader-highlight {
+  box-shadow:
+    inset 0 0 22px rgba(0, 0, 0, 0.85),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 0 32px var(--neon-gold),
+    0 0 64px color-mix(in srgb, var(--neon-pink) 40%, transparent) !important;
+  animation: leader-drum-pulse 1.6s ease-in-out infinite;
+}
+
+.drum.leader-highlight .indicator {
+  border-color: var(--neon-gold) !important;
+  box-shadow:
+    0 0 32px var(--neon-gold),
+    0 0 64px color-mix(in srgb, var(--neon-pink) 50%, transparent),
+    inset 0 0 30px color-mix(in srgb, var(--neon-gold) 30%, transparent) !important;
+}
+
+.drum.leader-highlight .cell.is-target {
+  color: var(--neon-gold) !important;
+  text-shadow:
+    0 0 18px var(--neon-gold),
+    0 0 36px color-mix(in srgb, var(--neon-pink) 60%, transparent) !important;
+}
+
+@keyframes leader-drum-pulse {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* 결과 카드 — 조장 표시 */
+.result-team-leader {
+  margin-left: auto;
+  font-family: 'Black Han Sans', sans-serif;
+  font-size: 14px;
+  color: var(--neon-gold);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--neon-gold) 75%, transparent);
+  letter-spacing: 0.04em;
+}
+
+.result-member.is-leader {
+  border-color: var(--neon-gold);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--neon-gold) 14%, transparent), color-mix(in srgb, var(--neon-pink) 6%, transparent));
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--neon-gold) 50%, transparent),
+    inset 0 0 14px color-mix(in srgb, var(--neon-gold) 18%, transparent);
+}
+
+.rm-leader-crown {
+  position: absolute;
+  top: -10px;
+  right: 8px;
+  font-size: 22px;
+  color: var(--neon-gold);
+  text-shadow:
+    0 0 12px var(--neon-gold),
+    0 0 24px color-mix(in srgb, var(--neon-pink) 60%, transparent);
+  z-index: 3;
+  filter: drop-shadow(0 0 6px var(--neon-gold));
+}
+
+/* 이력 — 조장 강조 */
+.hcs-names .leader-name {
+  color: var(--neon-gold);
+  font-weight: 700;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--neon-gold) 50%, transparent);
 }
 
 /* ===== 컨트롤 (SPIN 버튼) ===== */
@@ -620,6 +902,20 @@ h1.title {
 .result-member.substitute {
   border-color: color-mix(in srgb, var(--neon-purple) 50%, transparent);
   background: linear-gradient(160deg, color-mix(in srgb, var(--neon-purple) 10%, transparent), rgba(0, 0, 0, 0.4));
+}
+
+.result-member.rebalanced {
+  border-color: var(--neon-purple);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--neon-purple) 18%, transparent), color-mix(in srgb, var(--neon-pink) 8%, transparent));
+  box-shadow:
+    0 0 20px color-mix(in srgb, var(--neon-purple) 45%, transparent),
+    inset 0 0 12px color-mix(in srgb, var(--neon-purple) 15%, transparent);
+}
+
+.rm-sub-badge.rebalance {
+  background: linear-gradient(90deg, var(--neon-purple), var(--neon-pink));
+  font-size: 9px;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--neon-purple) 80%, transparent);
 }
 
 .result-member.confirmed {
@@ -958,10 +1254,14 @@ canvas#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; 
 /* ===== 반응형 ===== */
 @media (max-width: 760px) {
   .team-row { grid-template-columns: 70px 1fr; gap: 8px; }
+  .leader-cursor::before { font-size: 20px; }
+  .leader-cursor::after { top: 22px; }
   .team-label .tl-num { font-size: 26px; }
   .team-label .tl-name { font-size: 10px; }
   .reel-label { font-size: 13px; letter-spacing: 0.1em; }
+  .reel-wrap.is-rebalanced .reel-label { font-size: 13px; }
   .reel-wrap .sub-arrow { font-size: 10px; }
+  .cell.is-rebalance { font-size: 15px; }
   .drum { height: 96px; }
   .drum::before, .drum::after { height: 32px; }
   .indicator { top: 32px; height: 32px; }
