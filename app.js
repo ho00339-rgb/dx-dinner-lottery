@@ -285,34 +285,31 @@ function drawSimilarTeam(pool, usedNames, cooldown) {
 // =============================================================
 // 슬롯머신 UI
 // =============================================================
-const STRIP_LEN = 30;
-const TARGET_INDEX = 20;
+// strip은 가상의 긴 띠. 회전 바퀴 수(SPIN_LAPS) × 한 바퀴 셀 수(CYCLE_LEN)만큼 셀을 채워야
+// 어떤 위치로 끌어올려도 빈 공간이 안 보임.
+const CYCLE_LEN = 30;                       // 한 바퀴의 셀 수
+const SPIN_LAPS = 8;                        // 전체 회전 바퀴 수 (스트립이 이만큼 길어야 함)
+const STRIP_LEN = CYCLE_LEN * SPIN_LAPS;    // 총 셀 수 (240)
+const TARGET_INDEX = STRIP_LEN - 10;        // 타깃 셀 위치 — 끝쪽 근처
 
 function getItemHeight() { return window.innerWidth <= 760 ? 32 : 40; }
 function getFinalY() { const h = getItemHeight(); return -(TARGET_INDEX * h) + h; }
 
-// Web Animations API로 멀티-페이즈 스핀.
-// translateY는 항상 ↑(음수 방향)로만 단조감소. 시각 위치는 stripCycle 단위로 반복되므로
-// finalY 대신 finalY - N*stripCycle 로 끝내도 같은 셀이 보임.
+// Web Animations API 멀티-페이즈 스핀: 빠르게 → 천천히 감속.
+// strip은 SPIN_LAPS 바퀴 분량의 셀이 빌드되어 있어서, 0 → finalY 까지 단조감소로 이동하면
+// 자연스럽게 여러 바퀴가 흘러간 것처럼 보임.
 //
-// 시퀀스 (총 totalDuration):
-//   0%   : translateY 0
-//   55%  : 거의 끝 지점(N-1바퀴 더 위) — 여기까지 빠르게 휘몰아침
-//   100% : 진짜 끝 지점(시각적으로 타깃)            — 마지막 1바퀴를 천천히 감속
+// 시간 배분:
+//   0~55% : 전체 이동거리의 85% 를 빠르게 (휘몰아침)
+//   55~100%: 나머지 15% 를 천천히 (마지막 ~1바퀴 감속 → 타깃에서 멈춤)
 function spinStrip(strip, finalY, totalDuration) {
-  const stripCycle = STRIP_LEN * getItemHeight();
-  const totalLaps = 7;  // 전체 회전 바퀴 수
-
-  // 끝 위치를 finalY에서 (totalLaps-1)바퀴 더 위로 잡음 — 시각 위치는 동일
-  const endY = finalY - (totalLaps - 1) * stripCycle;
-  // 빠른 구간 끝: 마지막 1바퀴만 남긴 지점
-  const fastEndY = endY + stripCycle;
+  const fastEndY = finalY * 0.85;
 
   return strip.animate(
     [
       { transform: 'translateY(0)', offset: 0, easing: 'cubic-bezier(0.25, 0, 0.35, 1)' },
       { transform: `translateY(${fastEndY}px)`, offset: 0.55, easing: 'cubic-bezier(0.1, 0.4, 0.25, 1)' },
-      { transform: `translateY(${endY}px)`, offset: 1 },
+      { transform: `translateY(${finalY}px)`, offset: 1 },
     ],
     {
       duration: totalDuration,
