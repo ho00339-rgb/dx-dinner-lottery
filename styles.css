@@ -475,6 +475,48 @@ h1.title {
   animation: lock-pulse 1.4s ease-out infinite;
 }
 
+/* 잔여 통합 컬럼 — 네온 그린 락 */
+.drum.locked-leftover .indicator {
+  border-color: var(--neon-green);
+  box-shadow:
+    0 0 32px color-mix(in srgb, var(--neon-green) 95%, transparent),
+    0 0 64px color-mix(in srgb, var(--neon-green) 45%, transparent),
+    inset 0 0 32px color-mix(in srgb, var(--neon-green) 28%, transparent);
+  animation: lock-pulse 1.4s ease-out infinite;
+}
+
+.drum.locked-leftover .cell.is-target {
+  color: var(--neon-green);
+  text-shadow:
+    0 0 14px color-mix(in srgb, var(--neon-green) 95%, transparent),
+    0 0 28px color-mix(in srgb, var(--neon-green) 60%, transparent);
+  animation: target-pop 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.4);
+}
+
+/* PEER 하위 올랜덤 — 시안 락 */
+.drum.locked-random .indicator {
+  border-color: var(--neon-cyan);
+  box-shadow:
+    0 0 32px color-mix(in srgb, var(--neon-cyan) 95%, transparent),
+    0 0 64px color-mix(in srgb, var(--neon-cyan) 45%, transparent),
+    inset 0 0 32px color-mix(in srgb, var(--neon-cyan) 28%, transparent);
+  animation: lock-pulse 1.4s ease-out infinite;
+}
+
+.drum.locked-random .cell.is-target {
+  color: var(--neon-cyan);
+  text-shadow:
+    0 0 14px color-mix(in srgb, var(--neon-cyan) 95%, transparent),
+    0 0 28px color-mix(in srgb, var(--neon-cyan) 60%, transparent);
+  animation: target-pop 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.4);
+}
+
+/* 잔여 통합 컬럼 헤더 — 평소에도 그린 톤으로 살짝 구분 */
+.reel-wrap.is-leftover .reel-label {
+  color: var(--neon-green);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--neon-green) 55%, transparent);
+}
+
 .drum.rebalanced {
   animation: rebalance-shake 0.6s ease-out;
   box-shadow:
@@ -918,6 +960,46 @@ h1.title {
   box-shadow: 0 0 14px color-mix(in srgb, var(--neon-purple) 80%, transparent);
 }
 
+/* 잔여 통합 결과 카드 — 네온 그린 */
+.result-member.leftover {
+  border-color: color-mix(in srgb, var(--neon-green) 55%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--neon-green) 12%, transparent), rgba(0, 0, 0, 0.4));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--neon-green) 30%, transparent);
+}
+
+.rm-sub-badge.leftover {
+  background: linear-gradient(90deg, var(--neon-green), #00cc7d);
+  color: #001a10;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--neon-green) 70%, transparent);
+}
+
+/* PEER 하위 올랜덤 결과 카드 — 시안 */
+.result-member.random {
+  border-color: color-mix(in srgb, var(--neon-cyan) 55%, transparent);
+  background: linear-gradient(160deg, color-mix(in srgb, var(--neon-cyan) 12%, transparent), rgba(0, 0, 0, 0.4));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--neon-cyan) 30%, transparent);
+}
+
+.rm-sub-badge.random {
+  background: linear-gradient(90deg, var(--neon-cyan), #0096c7);
+  color: #001a22;
+  box-shadow: 0 0 12px color-mix(in srgb, var(--neon-cyan) 70%, transparent);
+}
+
+/* 팀 헤더의 올랜덤 태그 */
+.result-team-tag.random {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--neon-cyan);
+  border: 1px solid color-mix(in srgb, var(--neon-cyan) 40%, transparent);
+  background: color-mix(in srgb, var(--neon-cyan) 12%, transparent);
+  padding: 3px 10px;
+  border-radius: 50px;
+  font-weight: 700;
+  text-shadow: 0 0 8px color-mix(in srgb, var(--neon-cyan) 50%, transparent);
+}
+
 .result-member.confirmed {
   border-color: var(--neon-green);
   background: linear-gradient(160deg, color-mix(in srgb, var(--neon-green) 8%, transparent), rgba(0, 0, 0, 0.4));
@@ -1061,7 +1143,6 @@ h1.title {
 .history-card-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-bottom: 10px;
   flex-wrap: wrap;
   gap: 8px;
@@ -1090,7 +1171,31 @@ h1.title {
 .hc-mode.different { background: color-mix(in srgb, var(--neon-cyan) 15%, transparent); color: var(--neon-cyan); border: 1px solid color-mix(in srgb, var(--neon-cyan) 30%, transparent); }
 .hc-mode.similar { background: color-mix(in srgb, var(--neon-gold) 15%, transparent); color: var(--neon-gold); border: 1px solid color-mix(in srgb, var(--neon-gold) 30%, transparent); }
 
-.hc-date { font-size: 11px; color: var(--ink-dim); }
+.hc-date { font-size: 11px; color: var(--ink-dim); margin-left: auto; }
+
+.hc-delete {
+  background: rgba(255, 46, 136, 0.08);
+  border: 1px solid color-mix(in srgb, var(--neon-pink) 30%, transparent);
+  color: color-mix(in srgb, var(--neon-pink) 85%, white 15%);
+  font-family: 'Noto Sans KR', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.hc-delete:hover {
+  background: color-mix(in srgb, var(--neon-pink) 22%, transparent);
+  border-color: var(--neon-pink);
+  color: #fff;
+  box-shadow: 0 0 14px color-mix(in srgb, var(--neon-pink) 45%, transparent);
+}
+
+.hc-delete:active { transform: scale(0.96); }
 
 .history-card-summary {
   display: grid;

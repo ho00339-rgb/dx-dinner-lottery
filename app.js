@@ -4,7 +4,7 @@
 // 의존성: data.js (먼저 로드되어야 함)
 // =============================================================
 
-const STORAGE_KEY = 'dx_dinner_lottery_v2';
+const STORAGE_KEY = 'dx_dinner_lottery_v3';
 
 let state = {
   history: [],
@@ -57,6 +57,12 @@ function getSelectionCounts() {
 
 // =============================================================
 // 추첨 알고리즘
+//
+// 컬럼 구조: [기획] [운영] [정보보호+PMO] [잔여 통합]
+//   - 앞 3개 컬럼은 COLUMNS[i].groups 에 속한 멤버만 후보
+//   - 마지막 "잔여" 컬럼(leftover)은 앞 컬럼에서 안 뽑힌 사람 전원이 후보
+//   - MIX: 한 팀 4명이 모두 다른 티어
+//   - PEER: 한 팀 전체가 같은 묶음(상/중/하)
 // =============================================================
 function shuffle(arr) {
   const a = [...arr];
@@ -69,48 +75,16 @@ function shuffle(arr) {
 
 function randomChoice(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
-// =============================================================
-// "인원 조정" 가상 슬롯
-// 정보보호(4명)는 풀이 너무 작아서, 가상 슬롯 2개를 추가해
-// 33% 확률로 조정 이벤트가 터지면 TF에서 재추첨함
-// =============================================================
-const REBALANCE_SLOT_COUNT = 2;
-const REBALANCE_TARGET_GROUP = 'TF';
-const REBALANCE_SLOT_MARK = '__REBALANCE__';
-
-function isRebalanceSlot(m) { return m && m.name === REBALANCE_SLOT_MARK; }
-
-// 정보보호 슬롯용 후보 풀: 실제 멤버 + 가상 조정 슬롯
-function getBalancedCandidates(realMembers) {
-  const rebalanceSlots = Array.from({ length: REBALANCE_SLOT_COUNT }, () => ({
-    name: REBALANCE_SLOT_MARK,
-    group: '정보보호',
-    tier: '__REBALANCE__',
-    title: '',
-    part: '',
-    isRebalance: true,
-  }));
-  return [...realMembers, ...rebalanceSlots];
-}
-
-// "인원 조정" 슬롯이 뽑힌 경우, TF에서 사용 가능한 멤버 한 명을 골라 대체
-function resolveRebalanceSlot(usedNames, cooldown, usedTiers) {
-  const tfCandidates = MEMBERS.filter(m =>
-    m.group === REBALANCE_TARGET_GROUP &&
+// 특정 컬럼의 후보 멤버 목록 (제약: cooldown / 이미 뽑힘 / 현재 팀 중복 / 추가 필터)
+// leftover 컬럼이면 GROUPS 전체에서 뽑음.
+function columnCandidates(col, usedNames, cooldown, team, extraFilter) {
+  return MEMBERS.filter(m =>
+    (col.leftover || col.groups.includes(m.group)) &&
     !usedNames.has(m.name) &&
     !cooldown.has(m.name) &&
-    (!usedTiers || !usedTiers.has(m.tier))
+    !team.some(t => t.name === m.name) &&
+    (!extraFilter || extraFilter(m))
   );
-  if (tfCandidates.length === 0) {
-    // TF에도 없으면 쿨다운 무시하고 시도
-    const relaxed = MEMBERS.filter(m =>
-      m.group === REBALANCE_TARGET_GROUP &&
-      !usedNames.has(m.name) &&
-      (!usedTiers || !usedTiers.has(m.tier))
-    );
-    return relaxed.length > 0 ? randomChoice(relaxed) : null;
-  }
-  return randomChoice(tfCandidates);
 }
 
 // ----- MIX 모드 (각 팀 4명이 모두 다른 티어) -----
@@ -127,8 +101,8 @@ function drawDifferentMode() {
     if (!team) team = drawDifferentTeam(usedNames, new Set());
     if (team) {
       team.forEach(m => { if (m) usedNames.add(m.name); });
-      // 백트래킹 처리 순서가 아닌 GROUPS 표시 순서(TF→기획→운영→정보보호)로 재정렬
-      const orderedTeam = GROUPS.map(g => team.find(m => m.slotGroup === g)).filter(Boolean);
+      // 백트래킹 처리 순서가 아닌 COLUMNS 표시 순서로 재정렬
+      const orderedTeam = COLUMNS.map(c => team.find(m => m.slotCol === c.key)).filter(Boolean);
       teams.push({ teamLabel: `${i + 1}팀`, members: orderedTeam });
     } else {
       teams.push({ teamLabel: `${i + 1}팀`, members: [] });
@@ -138,79 +112,29 @@ function drawDifferentMode() {
 }
 
 function drawDifferentTeam(usedNames, cooldown) {
-  // 인원 적은 그룹부터 처리: 정보보호처럼 빠듯한 그룹이 자기 슬롯을 먼저 차지하도록.
-  // 그러면 TF처럼 여유 많은 그룹은 마지막에 남은 티어로 채워져서, 보충은 정말 부족할 때만 발생.
-  const groupsOrdered = [...GROUPS].sort((a, b) => {
-    const ca = MEMBERS.filter(m => m.group === a && !cooldown.has(m.name) && !usedNames.has(m.name)).length;
-    const cb = MEMBERS.filter(m => m.group === b && !cooldown.has(m.name) && !usedNames.has(m.name)).length;
+  // 후보가 적은 컬럼부터 처리하되, leftover(잔여)는 가장 유연하므로 항상 마지막에.
+  // 그래야 정보보호+PMO처럼 빠듯한 컬럼이 자기 슬롯을 먼저 차지하고,
+  // 부족분은 잔여 컬럼이 흡수.
+  const colsOrdered = [...COLUMNS].sort((a, b) => {
+    if (a.leftover !== b.leftover) return a.leftover ? 1 : -1;
+    const ca = columnCandidates(a, usedNames, cooldown, []).length;
+    const cb = columnCandidates(b, usedNames, cooldown, []).length;
     return ca - cb;
   });
-  return backtrackDifferent(groupsOrdered, 0, [], new Set(), usedNames, cooldown);
+  return backtrackDifferent(colsOrdered, 0, [], new Set(), usedNames, cooldown);
 }
 
-// 백트래킹: 4그룹 × 4티어 조합을 안정적으로 찾기
-function backtrackDifferent(groups, idx, team, usedTiers, usedNames, cooldown) {
-  if (idx === groups.length) return [...team];
+// 백트래킹: 4컬럼 × 4티어 조합을 안정적으로 찾기
+function backtrackDifferent(cols, idx, team, usedTiers, usedNames, cooldown) {
+  if (idx === cols.length) return [...team];
 
-  const targetGroup = groups[idx];
+  const col = cols[idx];
+  const candidates = columnCandidates(col, usedNames, cooldown, team, m => !usedTiers.has(m.tier));
 
-  // 1차: 해당 그룹에서 후보
-  const realPrimary = MEMBERS.filter(m =>
-    m.group === targetGroup &&
-    !usedTiers.has(m.tier) &&
-    !usedNames.has(m.name) &&
-    !cooldown.has(m.name) &&
-    !team.some(t => t.name === m.name)
-  );
-
-  // 정보보호 슬롯이면 "인원 조정" 가상 슬롯도 후보에 추가 (가중치로 33% 확률)
-  const primary = targetGroup === '정보보호'
-    ? getBalancedCandidates(realPrimary)
-    : realPrimary;
-
-  const tried = [...shuffle(primary).map(c => ({ cand: c, sub: null }))];
-
-  // 2차: 보충 (다른 그룹, 인원 많은 그룹 우선) — 실제 멤버가 0명일 때만
-  if (realPrimary.length === 0 && targetGroup !== '정보보호') {
-    const others = GROUPS.filter(g => g !== targetGroup)
-      .map(g => ({
-        g,
-        cs: MEMBERS.filter(m =>
-          m.group === g &&
-          !usedTiers.has(m.tier) &&
-          !usedNames.has(m.name) &&
-          !cooldown.has(m.name) &&
-          !team.some(t => t.name === m.name)
-        )
-      }))
-      .filter(p => p.cs.length > 0)
-      .sort((a, b) => b.cs.length - a.cs.length);
-
-    for (const p of others) shuffle(p.cs).forEach(c => tried.push({ cand: c, sub: targetGroup }));
-  }
-
-  for (const { cand, sub } of tried) {
-    // 조정 슬롯이 뽑힌 경우: TF에서 재추첨
-    if (cand.isRebalance) {
-      const tfPick = resolveRebalanceSlot(usedNames, cooldown, usedTiers);
-      if (!tfPick) continue;
-      team.push({
-        ...tfPick,
-        slotGroup: targetGroup,
-        substituteFor: targetGroup,
-        rebalanced: true,
-      });
-      usedTiers.add(tfPick.tier);
-      const res = backtrackDifferent(groups, idx + 1, team, usedTiers, usedNames, cooldown);
-      if (res) return res;
-      team.pop();
-      usedTiers.delete(tfPick.tier);
-      continue;
-    }
-
-    team.push({ ...cand, slotGroup: targetGroup, substituteFor: sub });
+  for (const cand of shuffle(candidates)) {
+    team.push({ ...cand, slotCol: col.key });
     usedTiers.add(cand.tier);
-    const res = backtrackDifferent(groups, idx + 1, team, usedTiers, usedNames, cooldown);
+    const res = backtrackDifferent(cols, idx + 1, team, usedTiers, usedNames, cooldown);
     if (res) return res;
     team.pop();
     usedTiers.delete(cand.tier);
@@ -218,7 +142,7 @@ function backtrackDifferent(groups, idx, team, usedTiers, usedNames, cooldown) {
   return null;
 }
 
-// ----- PEER 모드 (상/중/하 묶음에서 1팀씩) -----
+// ----- PEER 모드 (한 팀 전체가 같은 묶음: 상/중/하) -----
 function drawSimilarMode() {
   const cooldown = getCooldown('similar');
   const teams = [];
@@ -232,6 +156,37 @@ function drawSimilarMode() {
   return { mode: 'similar', teams };
 }
 
+function drawSimilarTeam(pool, usedNames, cooldown) {
+  // 하위(T6)는 컬럼 구조를 포기하고 묶음 전원에서 올랜덤으로 정원만큼 뽑음.
+  if (pool.allRandom) {
+    let candidates = MEMBERS.filter(m =>
+      pool.tiers.includes(m.tier) && !usedNames.has(m.name) && !cooldown.has(m.name)
+    );
+    // 쿨다운으로 정원이 안 차면 쿨다운 완화
+    if (candidates.length < TEAM_SIZE) {
+      candidates = MEMBERS.filter(m => pool.tiers.includes(m.tier) && !usedNames.has(m.name));
+    }
+    return shuffle(candidates)
+      .slice(0, TEAM_SIZE)
+      .map(m => ({ ...m, slotCol: null, allRandom: true }));
+  }
+
+  const team = [];
+  // 컬럼 순서 그대로(기획→운영→정보보호+PMO→잔여) 처리.
+  // 잔여 컬럼은 앞 컬럼에서 안 뽑힌 같은 묶음 인원을 흡수.
+  for (const col of COLUMNS) {
+    const inPool = m => pool.tiers.includes(m.tier);
+    const primary = columnCandidates(col, usedNames, cooldown, team, inPool);
+
+    if (primary.length > 0) {
+      const pick = randomChoice(primary);
+      team.push({ ...pick, slotCol: col.key });
+    }
+    // 후보가 없으면 그 슬롯은 비움
+  }
+  return team;
+}
+
 // =============================================================
 // 조장 선발 — 각 팀에서 랜덤 1명
 // =============================================================
@@ -241,45 +196,6 @@ function pickLeaders(teams) {
     if (members.length === 0) return null;
     return randomChoice(members).name;
   });
-}
-
-function drawSimilarTeam(pool, usedNames, cooldown) {
-  const team = [];
-  for (const targetGroup of GROUPS) {
-    const primary = MEMBERS.filter(m =>
-      m.group === targetGroup &&
-      pool.tiers.includes(m.tier) &&
-      !usedNames.has(m.name) &&
-      !cooldown.has(m.name) &&
-      !team.some(t => t.name === m.name)
-    );
-
-    if (primary.length > 0) {
-      const pick = randomChoice(primary);
-      team.push({ ...pick, slotGroup: targetGroup, substituteFor: null });
-    } else {
-      // 보충: 다른 그룹, 같은 풀, 인원 많은 그룹 우선
-      const others = GROUPS.filter(g => g !== targetGroup)
-        .map(g => ({
-          g,
-          cs: MEMBERS.filter(m =>
-            m.group === g &&
-            pool.tiers.includes(m.tier) &&
-            !usedNames.has(m.name) &&
-            !cooldown.has(m.name) &&
-            !team.some(t => t.name === m.name)
-          )
-        }))
-        .filter(p => p.cs.length > 0)
-        .sort((a, b) => b.cs.length - a.cs.length);
-
-      if (others.length > 0) {
-        const pick = randomChoice(others[0].cs);
-        team.push({ ...pick, slotGroup: targetGroup, substituteFor: targetGroup });
-      }
-    }
-  }
-  return team;
 }
 
 // =============================================================
@@ -331,10 +247,9 @@ function renderTeamRows() {
         <div class="tl-name">${lbl.label}</div>
       </div>
       <div class="team-reels">
-        ${GROUPS.map((g, colIdx) => `
-          <div class="reel-wrap" data-row="${rowIdx}" data-col="${colIdx}" data-slot-group="${g}">
-            <div class="reel-label">${GROUP_LABEL[g]}</div>
-            <div class="sub-arrow">↓ 보충</div>
+        ${COLUMNS.map((c, colIdx) => `
+          <div class="reel-wrap${c.leftover ? ' is-leftover' : ''}" data-row="${rowIdx}" data-col="${colIdx}" data-col-key="${c.key}">
+            <div class="reel-label">${c.label}</div>
             <div class="drum" data-row="${rowIdx}" data-col="${colIdx}">
               <div class="strip" data-row="${rowIdx}" data-col="${colIdx}"></div>
               <div class="indicator"></div>
@@ -347,68 +262,35 @@ function renderTeamRows() {
   `).join('');
 
   document.querySelectorAll('.strip').forEach(strip => {
-    const col = parseInt(strip.dataset.col);
-    const group = GROUPS[col];
-    const stripNames = getStripNamesForGroup(group);
+    const colIdx = parseInt(strip.dataset.col);
+    const stripNames = getStripNamesForColumn(COLUMNS[colIdx]);
     strip.innerHTML = '';
     for (let i = 0; i < STRIP_LEN; i++) {
       const cell = document.createElement('div');
-      const name = stripNames[i % stripNames.length];
-      cell.className = name === REBALANCE_SLOT_MARK ? 'cell is-rebalance' : 'cell';
-      cell.textContent = name === REBALANCE_SLOT_MARK ? '⚡인원조정' : name;
+      cell.className = 'cell';
+      cell.textContent = stripNames[i % stripNames.length];
       strip.appendChild(cell);
     }
   });
 }
 
-// 슬롯 스트립에 표시될 이름 목록 (정보보호는 인원조정 슬롯도 섞음)
-function getStripNamesForGroup(group) {
-  const realNames = MEMBERS.filter(m => m.group === group).map(m => m.name);
-  if (group !== '정보보호') return realNames;
-  const names = [...realNames];
-  for (let i = 0; i < REBALANCE_SLOT_COUNT; i++) names.push(REBALANCE_SLOT_MARK);
+// 슬롯 스트립에 표시될 이름 목록. leftover 컬럼은 전원이 후보이므로 전체 이름.
+function getStripNamesForColumn(col) {
+  const names = MEMBERS
+    .filter(m => col.leftover || col.groups.includes(m.group))
+    .map(m => m.name);
   return shuffle(names);
 }
 
-// 일반 회전용 스트립: 타깃 인덱스에 member.name이 박힘
-function buildStripWithChosen(stripEl, member) {
-  const stripNames = getStripNamesForGroup(member.group);
-  stripEl.innerHTML = '';
-  for (let i = 0; i < STRIP_LEN; i++) {
-    const cell = document.createElement('div');
-    if (i === TARGET_INDEX) {
-      cell.className = 'cell is-target';
-      cell.textContent = member.name;
-    } else {
-      const name = stripNames[Math.floor(Math.random() * stripNames.length)];
-      cell.className = name === REBALANCE_SLOT_MARK ? 'cell is-rebalance' : 'cell';
-      cell.textContent = name === REBALANCE_SLOT_MARK ? '⚡인원조정' : name;
-    }
-    stripEl.appendChild(cell);
-  }
+// allRandom 팀(PEER 하위)용 스트립 이름 — 같은 묶음(T6) 전원
+function getStripNamesForPool(pool) {
+  return shuffle(MEMBERS.filter(m => pool.tiers.includes(m.tier)).map(m => m.name));
 }
 
-// 1차 회전용: 정보보호 풀에서 "인원조정" 셀에 멈춤
-function buildStripStoppingAtRebalance(stripEl) {
-  const stripNames = getStripNamesForGroup('정보보호');
-  stripEl.innerHTML = '';
-  for (let i = 0; i < STRIP_LEN; i++) {
-    const cell = document.createElement('div');
-    if (i === TARGET_INDEX) {
-      cell.className = 'cell is-target is-rebalance';
-      cell.textContent = '⚡인원조정';
-    } else {
-      const name = stripNames[Math.floor(Math.random() * stripNames.length)];
-      cell.className = name === REBALANCE_SLOT_MARK ? 'cell is-rebalance' : 'cell';
-      cell.textContent = name === REBALANCE_SLOT_MARK ? '⚡인원조정' : name;
-    }
-    stripEl.appendChild(cell);
-  }
-}
-
-// 2차 회전용: TF 풀에서 최종 멤버에 멈춤
-function buildStripWithTfTarget(stripEl, member) {
-  const stripNames = MEMBERS.filter(m => m.group === 'TF').map(m => m.name);
+// 회전용 스트립: 타깃 인덱스에 member.name이 박힘
+// stripNames 미지정 시 컬럼 기준으로 결정.
+function buildStripWithChosen(stripEl, member, col, stripNames) {
+  stripNames = stripNames || getStripNamesForColumn(col);
   stripEl.innerHTML = '';
   for (let i = 0; i < STRIP_LEN; i++) {
     const cell = document.createElement('div');
@@ -431,14 +313,13 @@ async function animateDraw(result) {
   const finalY = getFinalY();
 
   document.querySelectorAll('.drum').forEach(d => d.classList.remove(
-    'locked', 'substitute', 'rebalanced', 'spinning', 'spinning-tf',
-    'rebalance-pending', 'leader-highlight', 'leader-sweep'
+    'locked', 'locked-leftover', 'locked-random', 'spinning', 'leader-highlight', 'leader-sweep'
   ));
   document.querySelectorAll('.reel-wrap').forEach(w => {
-    w.classList.remove('is-substitute', 'is-rebalanced');
     const label = w.querySelector('.reel-label');
-    const slotGroup = w.dataset.slotGroup;
-    if (label && slotGroup) label.textContent = GROUP_LABEL[slotGroup];
+    const colKey = w.dataset.colKey;
+    const col = COLUMNS.find(c => c.key === colKey);
+    if (label && col) label.textContent = col.label;
   });
   // 조장 커서/팀행 상태 즉시 리셋 — RESPIN 시 ♛ 잔존 방지
   document.querySelectorAll('.team-row').forEach(r => r.classList.remove('leader-active', 'leader-done'));
@@ -452,6 +333,11 @@ async function animateDraw(result) {
 
   for (let rowIdx = 0; rowIdx < teams.length; rowIdx++) {
     const team = teams[rowIdx];
+    // PEER 하위처럼 올랜덤 팀이면 스트립을 묶음(T6) 전원에서 굴림
+    const isAllRandom = team.members.some(m => m && m.allRandom);
+    const poolForRow = result.mode === 'similar' ? POOLS[rowIdx] : null;
+    const allRandomNames = isAllRandom && poolForRow ? getStripNamesForPool(poolForRow) : null;
+
     for (let colIdx = 0; colIdx < 4; colIdx++) {
       const member = team.members[colIdx];
       if (!member) continue;
@@ -461,9 +347,8 @@ async function animateDraw(result) {
       const reelWrap = document.querySelector(`.reel-wrap[data-row="${rowIdx}"][data-col="${colIdx}"]`);
       if (!strip || !drum) continue;
 
-      // 1차 스트립: rebalanced면 정보보호 풀에서 "인원조정"으로 멈춤. 그 외엔 일반.
-      if (member.rebalanced) buildStripStoppingAtRebalance(strip);
-      else buildStripWithChosen(strip, member);
+      const col = COLUMNS[colIdx];
+      buildStripWithChosen(strip, member, col, allRandomNames);
 
       const totalDelay = rowIdx * rowDelay + colIdx * baseDelay;
       strip.style.transition = 'none';
@@ -482,59 +367,26 @@ async function animateDraw(result) {
           setTimeout(() => {
             drum.classList.remove('spinning');
 
-            if (member.rebalanced) {
-              // === 1차 정지: 인원조정 셀에서 멈춤 → 폭발 → 2차 회전 ===
-              drum.classList.add('rebalance-pending');
+            if (member.allRandom) {
+              // PEER 하위 올랜덤 — 시안으로 차별화 + 라벨에 OLL-RANDOM 표시
+              drum.classList.add('locked-random');
               if (reelWrap) {
-                reelWrap.classList.add('is-rebalanced');
                 const label = reelWrap.querySelector('.reel-label');
-                if (label) label.textContent = `⚡ 인원조정 발동!`;
+                if (label) label.textContent = `🎲 올랜덤 · ${GROUP_LABEL[member.group]}`;
               }
-              flashScreen(0.32, '#b026ff');
-              rebalanceBurst(drum);
-              spawnRebalanceText(drum);
-              tickShake(drum, 1.2);
-
-              // 약간 뜸을 들였다가 2차 회전 시작 (TF 풀에서 멈춤)
-              setTimeout(() => {
-                drum.classList.remove('rebalance-pending');
-                drum.classList.add('spinning', 'spinning-tf');
-
-                // 2차 스트립 구성 + 시작 위치로 리셋
-                buildStripWithTfTarget(strip, member);
-                strip.style.transition = 'none';
-                strip.style.transform = 'translateY(0)';
-                void strip.offsetWidth;
-
-                spinStrip(strip, finalY, spinDuration);
-
-                setTimeout(() => { tickShake(drum, 0.25); }, spinDuration * 0.58);
-                setTimeout(() => { tickShake(drum, 0.4); }, spinDuration * 0.85);
-
-                // 2차 정지
-                setTimeout(() => {
-                  drum.classList.remove('spinning', 'spinning-tf');
-                  drum.classList.add('rebalanced');
-                  if (reelWrap) {
-                    const label = reelWrap.querySelector('.reel-label');
-                    if (label) label.textContent = `⚡ 인원조정 → ${GROUP_LABEL[member.group]}`;
-                  }
-                  flashScreen(0.22, '#ff2e88');
-                  lockBurst(drum, '#b026ff', 22);
-                  lockBurst(drum, '#ff2e88', 14);
-                  tickShake(drum, 0.9);
-                  resolve();
-                }, spinDuration);
-              }, 850);
-            } else if (member.substituteFor) {
-              drum.classList.add('substitute');
+              flashScreen(0.16, '#00e8ff');
+              lockBurst(drum, '#00e8ff', 18);
+              tickShake(drum, 0.6);
+              resolve();
+            } else if (col.leftover) {
+              // 잔여 통합 컬럼 — 네온 그린으로 차별화
+              drum.classList.add('locked-leftover');
               if (reelWrap) {
-                reelWrap.classList.add('is-substitute');
                 const label = reelWrap.querySelector('.reel-label');
-                if (label) label.textContent = `${GROUP_LABEL[member.substituteFor]} → ${GROUP_LABEL[member.group]}`;
+                if (label) label.textContent = `${col.label} · ${GROUP_LABEL[member.group]}`;
               }
-              flashScreen(0.18, '#b026ff');
-              lockBurst(drum, '#b026ff', 20);
+              flashScreen(0.16, '#00ff9d');
+              lockBurst(drum, '#00ff9d', 18);
               tickShake(drum, 0.6);
               resolve();
             } else {
@@ -576,60 +428,6 @@ function lockBurst(drum, color, count = 14) {
       color, rot: Math.random() * 360, vRot: (Math.random() - 0.5) * 14, life: 60
     });
   }
-}
-
-// 인원조정 이벤트용 — 큰 보라색 폭발 (링 + 파티클)
-function rebalanceBurst(drum) {
-  const rect = drum.getBoundingClientRect();
-  const cx = rect.left + rect.width / 2;
-  const cy = rect.top + rect.height / 2;
-  // 메인 파티클
-  for (let i = 0; i < 40; i++) {
-    const angle = (Math.PI * 2 * i) / 40;
-    const speed = 6 + Math.random() * 8;
-    confettiParts.push({
-      x: cx, y: cy,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      g: 0.18, size: Math.random() * 5 + 3,
-      color: ['#b026ff', '#ff2e88', '#ffcb05', '#00e8ff'][Math.floor(Math.random() * 4)],
-      rot: Math.random() * 360, vRot: (Math.random() - 0.5) * 20, life: 100,
-    });
-  }
-  // 확장 링 (DOM 엘리먼트)
-  const ring = document.createElement('div');
-  ring.style.cssText = `position:fixed;left:${cx}px;top:${cy}px;width:20px;height:20px;border-radius:50%;border:3px solid #b026ff;box-shadow:0 0 30px #b026ff,inset 0 0 20px #b026ff;transform:translate(-50%,-50%);pointer-events:none;z-index:55;`;
-  document.body.appendChild(ring);
-  ring.animate(
-    [
-      { width: '20px', height: '20px', opacity: 1, borderWidth: '3px' },
-      { width: '400px', height: '400px', opacity: 0, borderWidth: '1px' },
-    ],
-    { duration: 700, easing: 'cubic-bezier(0.2, 0.7, 0.3, 1)' }
-  ).onfinish = () => ring.remove();
-}
-
-// "REROLL!" 텍스트가 드럼 위로 튀어오르며 페이드
-function spawnRebalanceText(drum) {
-  const rect = drum.getBoundingClientRect();
-  const txt = document.createElement('div');
-  txt.textContent = '⚡ REROLL!';
-  txt.style.cssText = `
-    position:fixed;left:${rect.left + rect.width / 2}px;top:${rect.top + rect.height / 2}px;
-    transform:translate(-50%,-50%);pointer-events:none;z-index:70;
-    font-family:'Black Han Sans',sans-serif;font-size:32px;color:#fff;
-    text-shadow:0 0 16px #b026ff,0 0 32px #b026ff,0 0 48px #ff2e88;
-    letter-spacing:0.05em;white-space:nowrap;
-  `;
-  document.body.appendChild(txt);
-  txt.animate(
-    [
-      { transform: 'translate(-50%,-50%) scale(0.4)', opacity: 0 },
-      { transform: 'translate(-50%,-180%) scale(1.4)', opacity: 1, offset: 0.3 },
-      { transform: 'translate(-50%,-260%) scale(1.1)', opacity: 0 },
-    ],
-    { duration: 1100, easing: 'cubic-bezier(0.18, 0.89, 0.32, 1.05)' }
-  ).onfinish = () => txt.remove();
 }
 
 // =============================================================
@@ -767,20 +565,24 @@ function tickShake(drum, intensity = 0.5) {
 function renderResults(result) {
   const container = document.getElementById('resultsTeams');
   const leaders = result.leaders || [];
+
+  const headcount = result.teams.reduce((n, t) => n + t.members.filter(Boolean).length, 0);
+  const titleEl = document.getElementById('resultsTitle');
+  if (titleEl) titleEl.textContent = `오늘의 회식 멤버 ${headcount}명이 결정되었습니다`;
+
   container.innerHTML = result.teams.map((team, idx) => `
     <div class="result-team">
       <div class="result-team-header">
         <div class="result-team-num">${idx + 1}팀</div>
         <div class="result-team-label">${team.teamLabel || ''}${team.poolName ? ' · ' + getPoolDescription(team.poolName) : ''}</div>
+        ${team.members.some(m => m && m.allRandom) ? `<div class="result-team-tag random">🎲 올랜덤</div>` : ''}
         ${leaders[idx] ? `<div class="result-team-leader">♛ 조장 · ${leaders[idx]}</div>` : ''}
       </div>
       <div class="result-members">
         ${team.members.map(m => m ? `
-          <div class="result-member ${m.rebalanced ? 'rebalanced' : (m.substituteFor ? 'substitute' : '')} ${leaders[idx] === m.name ? 'is-leader' : ''}" data-name="${m.name}">
+          <div class="result-member ${m.allRandom ? 'random' : (m.slotCol === '잔여' ? 'leftover' : '')} ${leaders[idx] === m.name ? 'is-leader' : ''}" data-name="${m.name}">
             ${leaders[idx] === m.name ? `<div class="rm-leader-crown">♛</div>` : ''}
-            ${m.rebalanced
-              ? `<div class="rm-sub-badge rebalance">⚡ 인원조정</div>`
-              : (m.substituteFor ? `<div class="rm-sub-badge">${m.substituteFor} 보충</div>` : '')}
+            ${m.allRandom ? `<div class="rm-sub-badge random">🎲 올랜덤</div>` : (m.slotCol === '잔여' ? `<div class="rm-sub-badge leftover">잔여 통합</div>` : '')}
             <div class="rm-group">${GROUP_LABEL[m.group]}</div>
             <div class="rm-name">${m.name}</div>
             <div class="rm-title">${m.title} · ${TIER_LABEL[m.tier]}</div>
@@ -796,7 +598,7 @@ function getPoolDescription(name) {
   const map = {
     '상위': 'T1-T3 · 그룹장+팀장+시니어',
     '중위': 'T4-T5 · 차장+과장',
-    '하위': 'T6 · 사원+대리+주임'
+    '하위': 'T6 · 사원+대리+주임 (올랜덤)'
   };
   return map[name] || '';
 }
@@ -928,10 +730,11 @@ function renderHistory() {
     container.innerHTML = '<div class="history-empty">아직 확정된 회차가 없습니다.<br>추첨 후 결과를 확정하면 여기에 기록됩니다.</div>';
     return;
   }
-  const sorted = [...state.history].reverse();
+  // 원본 인덱스를 함께 보관해 reverse 표시 후에도 정확히 삭제
+  const sorted = state.history.map((round, idx) => ({ round, idx })).reverse();
   container.innerHTML = `
     <div class="history-list">
-      ${sorted.map(round => `
+      ${sorted.map(({ round, idx }) => `
         <div class="history-card">
           <div class="history-card-header">
             <div class="history-card-meta">
@@ -939,6 +742,7 @@ function renderHistory() {
               <div class="hc-mode ${round.mode}">${round.mode === 'different' ? 'MIX' : 'PEER'}</div>
             </div>
             <div class="hc-date">${round.date}</div>
+            <button class="hc-delete" data-idx="${idx}" title="이 회차 삭제" aria-label="이 회차 삭제">🗑 삭제</button>
           </div>
           <div class="history-card-summary">
             ${round.teams.map((team, idx) => {
@@ -950,7 +754,7 @@ function renderHistory() {
                   ${team.members.map(m => m
                     ? (m.name === leaderName
                         ? `<span class="leader-name">♛${m.name}(${m.group})</span>`
-                        : (m.substituteFor
+                        : (m.slotCol === '잔여'
                             ? `<span class="sub-name">${m.name}(${m.group})</span>`
                             : `${m.name}(${m.group})`))
                     : '—').join(' · ')}
@@ -962,6 +766,25 @@ function renderHistory() {
       `).join('')}
     </div>
   `;
+}
+
+// 한 회차 삭제 — 삭제 후 남은 회차의 roundNum을 1부터 재정렬
+function deleteRound(idx) {
+  const round = state.history[idx];
+  if (!round) return;
+
+  const modeLabel = round.mode === 'different' ? 'MIX' : 'PEER';
+  if (!confirm(`#${round.roundNum} (${modeLabel} · ${round.date}) 회차를 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) return;
+
+  state.history.splice(idx, 1);
+  // 번호 재정렬
+  state.history.forEach((r, i) => { r.roundNum = i + 1; });
+  saveState();
+
+  showToast('회차가 삭제되었습니다');
+  renderHistory();
+  renderMembers();
+  updateRoundInfo();
 }
 
 // =============================================================
@@ -1109,6 +932,12 @@ function init() {
 
   document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => setMode(btn.dataset.mode));
+  });
+
+  // 이력 회차 삭제 (동적 렌더되므로 컨테이너에 이벤트 위임)
+  document.getElementById('historyContent').addEventListener('click', (e) => {
+    const btn = e.target.closest('.hc-delete');
+    if (btn) deleteRound(parseInt(btn.dataset.idx, 10));
   });
 }
 
