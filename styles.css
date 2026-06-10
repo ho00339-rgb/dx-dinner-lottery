@@ -1382,3 +1382,198 @@ canvas#confetti { position: fixed; inset: 0; pointer-events: none; z-index: 50; 
   .cell { font-size: 17px; }
   .rm-name { font-size: 17px; }
 }
+
+/* ===== 시스템 설명 패널 (설계 탭) ===== */
+.logic-guide {
+  max-width: 760px;
+  margin: 0 auto;
+  background: linear-gradient(160deg, rgba(0, 0, 0, 0.42), rgba(20, 16, 60, 0.55));
+  border: 1px solid var(--border-strong);
+  border-radius: 18px;
+  padding: 22px 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.logic-guide::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--neon-pink), var(--neon-purple), var(--neon-cyan));
+}
+
+.lg-eyebrow {
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 0.34em;
+  font-size: 10px;
+  color: var(--neon-cyan);
+  margin-bottom: 6px;
+}
+
+.lg-title {
+  font-family: 'Black Han Sans', sans-serif;
+  font-size: 21px;
+  margin-bottom: 10px;
+  text-shadow: 0 0 14px color-mix(in srgb, var(--neon-purple) 60%, transparent);
+}
+
+.lg-ver {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 11px;
+  color: var(--ink-dim);
+  letter-spacing: 0.2em;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+
+.lg-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+
+.lg-badge {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-strong);
+  color: var(--ink-dim);
+}
+
+.lg-badge.gold {
+  border-color: color-mix(in srgb, var(--neon-gold) 60%, transparent);
+  color: var(--neon-gold);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--neon-gold) 60%, transparent);
+}
+
+.lg-section-label {
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 0.26em;
+  font-size: 11px;
+  color: var(--neon-cyan);
+  margin: 16px 0 8px;
+}
+
+.lg-card {
+  background: rgba(0, 0, 0, 0.26);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink-dim);
+}
+
+.lg-card b { color: var(--ink); }
+
+.lg-sub { margin-top: 8px; display: grid; gap: 5px; font-size: 11.5px; color: var(--ink-faint); }
+.lg-sub b { color: var(--ink-dim); }
+
+.lg-mode { margin-bottom: 8px; }
+.lg-mode:last-of-type { margin-bottom: 0; }
+
+.lg-mode-tag {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  padding: 1px 8px;
+  border-radius: 6px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+.lg-mode-tag.mix { border: 1px solid var(--neon-pink); color: var(--neon-pink); }
+.lg-mode-tag.peer { border: 1px solid var(--neon-green); color: var(--neon-green); }
+
+.lg-promise {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid color-mix(in srgb, var(--neon-gold) 30%, transparent);
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+
+.lg-promise b { color: var(--neon-gold); }
+.lg-promise small { color: var(--ink-dim); font-size: 11.5px; }
+
+.lg-vs { display: grid; gap: 6px; margin-bottom: 10px; }
+
+.lg-vs-row {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 9px 12px;
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.lg-vs-row span { color: var(--ink-faint); font-size: 11px; }
+.lg-vs-row.bad b { color: var(--neon-pink); }
+.lg-vs-row.good b { color: var(--neon-green); }
+.lg-vs-row small { color: var(--ink-faint); font-size: 11px; }
+
+.lg-steps {
+  list-style: none;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 16px;
+  counter-reset: lgstep;
+}
+
+.lg-steps li {
+  position: relative;
+  padding: 10px 12px 10px 40px;
+  background: rgba(0, 0, 0, 0.26);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  counter-increment: lgstep;
+}
+
+.lg-steps li::before {
+  content: counter(lgstep);
+  position: absolute;
+  left: 12px; top: 11px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Bebas Neue', sans-serif;
+}
+
+.lg-steps li b { color: var(--ink); }
+
+.lg-verified {
+  border: 1px dashed color-mix(in srgb, var(--neon-green) 55%, transparent);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.lg-stamp {
+  font-family: 'Bebas Neue', sans-serif;
+  letter-spacing: 0.12em;
+  color: var(--neon-green);
+  border: 2px solid var(--neon-green);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 14px;
+  transform: rotate(-6deg);
+  white-space: nowrap;
+  text-shadow: 0 0 12px color-mix(in srgb, var(--neon-green) 70%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--neon-green) 25%, transparent);
+}
+
+.lg-verified-rows { font-size: 11.5px; color: var(--ink-dim); line-height: 1.7; }
+.lg-verified-rows b { color: var(--ink); font-size: 13px; }
+
+/* 설계 탭 포함 4개 버튼이라 탭 바를 살짝 넓힘 */
+.tabs { max-width: 520px; }

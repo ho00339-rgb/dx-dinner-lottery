@@ -511,6 +511,18 @@ function drawPeerSeason() {
     bands = byBand;
   } else {
     bands = selectPeerBands(byBand, attendees);
+    if (!bands) {
+      // 폴백: 가상의 MIX를 먼저 배치하고 그 여집합을 PEER로 사용 — 구조상 항상 성립
+      const bandAttending = POOLS.map(() => 0);
+      attendees.forEach(m => bandAttending[bandOf(m)]++);
+      const mixQuota = bandAttending.map(n => n - TEAM_SIZE);
+      const virtualMix = mixQuota.every(q => q >= 0)
+        ? arrangeMixSeason(attendees, mixQuota, null, 2) : null;
+      if (virtualMix) {
+        const mixNames = new Set(virtualMix.flat().map(m => m.name));
+        bands = byBand.map(b => b.filter(m => !mixNames.has(m.name)));
+      }
+    }
     if (!bands) return { error: '팀 선발에 실패했습니다. 다시 SPIN 해주세요.' };
   }
 

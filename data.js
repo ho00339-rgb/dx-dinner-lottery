@@ -35,6 +35,7 @@ const MEMBERS = [
   // T5 과장급
   { name: '부병식', group: 'PMO', tier: 'T5', title: '과장', part: 'PMO' },
   { name: '김혁중', group: '운영', tier: 'T5', title: '과장', part: 'ERP' },
+  { name: '허성오', group: '기획', tier: 'T5', title: '과장', part: '' },
 
   // T6 주니어급
   { name: '김호연', group: '기획', tier: 'T6', title: '대리', part: '과제발굴' },

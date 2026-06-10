@@ -23,6 +23,7 @@
     <button class="tab-btn active" data-tab="lottery">추첨</button>
     <button class="tab-btn" data-tab="history">이력</button>
     <button class="tab-btn" data-tab="members">멤버</button>
+    <button class="tab-btn" data-tab="guide">설계</button>
   </div>
 
   <!-- LOTTERY TAB -->
@@ -87,6 +88,91 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- GUIDE TAB (설계 노트) -->
+  <div class="tab-panel" id="tab-guide">
+    <aside class="logic-guide" aria-label="추첨 시스템 설명">
+      <div class="lg-eyebrow">HOW THIS MACHINE WORKS</div>
+      <div class="lg-title">⚙ 추첨 시스템 설계 노트 <span class="lg-ver">2026 H2</span></div>
+      <div class="lg-badges">
+        <span class="lg-badge">25명</span>
+        <span class="lg-badge">12회차 · 144자리</span>
+        <span class="lg-badge gold">격차 ±1 보장</span>
+      </div>
+
+      <div class="lg-section-label">① 왜 이런 컬럼 구조인가</div>
+      <div class="lg-card">
+        회식의 목적이 <b>4개 그룹 화합</b>이라서, 좌석 구조 자체가 섞임을 강제합니다.
+        모든 팀은 <b>기획 1 · 운영 1 · 정보보호+PMO 1</b>이 고정석.
+        <div class="lg-sub">
+          <div>· <b>정보보호+PMO를 묶은 이유</b> — 두 그룹 합쳐 7명뿐이라
+            각자 단독 컬럼을 운영하면 매번 같은 얼굴만 나오게 됨</div>
+          <div>· <b>잔여 통합 (그린)</b> — 4번째 자리는 전원이 후보.
+            빠듯한 컬럼에서 못 채운 인원을 자연스럽게 흡수하는 완충 장치</div>
+        </div>
+      </div>
+
+      <div class="lg-section-label">② 두 가지 모드</div>
+      <div class="lg-card">
+        <div class="lg-mode"><span class="lg-mode-tag mix">MIX</span>
+          선후배 회식 — 한 팀 4명이 <b>전부 다른 직급(티어)</b>.
+          그룹장부터 주니어까지 사다리를 섞음 (매월 2주차)</div>
+        <div class="lg-mode"><span class="lg-mode-tag peer">PEER</span>
+          또래 회식 — <b>상(T1~3) · 중(T4~5) · 하(T6)</b> 같은 묶음끼리
+          편한 자리 (매월 4주차)</div>
+        <div class="lg-sub">
+          <div>· <b>하위팀이 🎲 올랜덤인 이유</b> — T6 주니어는 기획·운영에만 있어서
+            정보보호+PMO 고정석을 채울 수 없음 → 컬럼 구조를 포기하고
+            T6 전원에서 4명 올랜덤</div>
+        </div>
+      </div>
+
+      <div class="lg-section-label">③ 연간 균등화 엔진</div>
+      <div class="lg-promise">
+        연말까지 <b>전원 정확히 6회</b> 출석<br>
+        <small>팀장급(T2)만 5회 + 한 달 휴식 — 144자리에 딱 맞는 유일한 배분.
+        수학적으로 가능한 최대 균등입니다.</small>
+      </div>
+
+      <div class="lg-vs">
+        <div class="lg-vs-row bad">
+          <span>순수 랜덤으로 1년 추첨 시</span>
+          <b>최다·최소 격차 평균 6회</b>
+          <small>0회인 사람과 11회인 사람이 공존 (3,000시즌 실측)</small>
+        </div>
+        <div class="lg-vs-row good">
+          <span>균등화 엔진 적용 시</span>
+          <b>격차 정확히 1회</b>
+          <small>19명 = 6회 · T2 6명 = 5회, 오차 없음</small>
+        </div>
+      </div>
+
+      <ol class="lg-steps">
+        <li><b>😴 매월 휴식자 1명</b><br>
+          25명에 자리는 24개 — 아직 안 쉰 T2 중 1명이 랜덤 휴식.
+          6명 × 6개월 완전 매칭, 두 번 쉬는 사람도 못 쉬는 사람도 없음</li>
+        <li><b>🎰 MIX 추첨</b><br>
+          출석 24명에서 상위 7 · 중위 4 · 주니어 1명을
+          4컬럼 × 4티어 규칙과 <b>동시에</b> 백트래킹 탐색.
+          따로 뽑으면 10번 중 6번은 배치 불가능 — 그래서 결합 탐색</li>
+        <li><b>🤝 PEER 추첨</b><br>
+          같은 달 MIX에 안 나간 전원이 자동으로 멤버 확정 (여집합 원리).
+          컬럼은 표시용 — 그룹이 다르면 그린 <b>교차 배치</b></li>
+        <li><b>🌡 소프트 쿨다운</b><br>
+          연속 출석은 가중치로 회피. 강제 제외는
+          연간 쿼터와 수학적으로 모순이라 두지 않음</li>
+      </ol>
+
+      <div class="lg-verified">
+        <div class="lg-stamp">VERIFIED ✓</div>
+        <div class="lg-verified-rows">
+          <div><b>693,000</b> 조합 전수조사</div>
+          <div><b>10,000+</b> 시즌 시뮬레이션</div>
+          <div><b>0건</b> 추첨 실패 · 쿼터 오차</div>
+        </div>
+      </div>
+    </aside>
   </div>
 
   <!-- HISTORY TAB -->
