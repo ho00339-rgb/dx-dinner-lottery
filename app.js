@@ -188,6 +188,354 @@ function drawSimilarTeam(pool, usedNames, cooldown) {
 }
 
 // =============================================================
+// 연간 플랜(시즌) 엔진 — 2026 하반기 균등화
+//
+// 수학적 구조 (시뮬레이션·전수조사로 검증됨):
+//   - 월 24자리 / 25명 + 월간 중복 금지 → 매월 정확히 1명 휴식
+//   - 비T2는 쿼터 6 = 만근 강제 → 휴식자는 항상 "아직 휴식 안 한 T2"
+//   - PEER 팀이 밴드별 정확히 4명 → MIX = 상위 7 / 중위 4 / T6 1로 유일 강제
+//   - PEER 멤버십 = 그 달 MIX의 여집합 (컬럼은 표시용 배정만)
+//   - 시즌 중 하드 쿨다운은 수학적으로 모순 → 소프트 가중치(회피 선호)만 적용
+// 회차 페어링은 roundNum이 아닌 저장된 seasonMonth 필드 기준 (삭제에 안전).
+// =============================================================
+
+function quotaOf(m) { return m.tier === SEASON.restTier ? SEASON.months - 1 : SEASON.months; }
+function bandOf(m) { return POOLS.findIndex(p => p.tiers.includes(m.tier)); }
+
+function seasonRounds() { return state.history.filter(r => r.season === SEASON.id); }
+
+// 시즌 성립 전제 검증 — 로스터 변경 등으로 깨지면 레거시 추첨으로 폴백
+function seasonPlanValid() {
+  const restCount = MEMBERS.filter(m => m.tier === SEASON.restTier).length;
+  if (restCount !== SEASON.months) return false;
+
+  const quotaSum = MEMBERS.reduce((s, m) => s + quotaOf(m), 0);
+  if (quotaSum !== SEASON.months * TEAM_SIZE * 6) return false; // 월 2회차 × 3팀 × 4명
+
+  const bandSizes = POOLS.map(() => 0);
+  for (const m of MEMBERS) {
+    const b = bandOf(m);
+    if (b < 0) return false;
+    bandSizes[b]++;
+  }
+  const restBand = POOLS.findIndex(p => p.tiers.includes(SEASON.restTier));
+  // 밴드별 월간 MIX 선발 수 = 출석 − 4 ≥ 0, 합계 12
+  let mixTotal = 0;
+  for (let b = 0; b < bandSizes.length; b++) {
+    const take = bandSizes[b] - (b === restBand ? 1 : 0) - TEAM_SIZE;
+    if (take < 0) return false;
+    mixTotal += take;
+  }
+  if (mixTotal !== TEAM_SIZE * 3) return false;
+
+  // 시즌 이력의 이름·티어가 현재 로스터와 일치해야 함 (시즌 중 인사 변경 감지)
+  const byName = {};
+  MEMBERS.forEach(m => byName[m.name] = m);
+  for (const r of seasonRounds()) {
+    if (r.restedName && !byName[r.restedName]) return false;
+    for (const t of r.teams) {
+      for (const mm of t.members) {
+        if (mm && (!byName[mm.name] || byName[mm.name].tier !== mm.tier)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+// 해당 모드의 다음(가장 낮은 미완성) 시즌 월 — 1~months, 전부 완료면 null
+function nextSeasonMonth(mode) {
+  const rounds = seasonRounds();
+  for (let k = 1; k <= SEASON.months; k++) {
+    if (!rounds.some(r => r.mode === mode && r.seasonMonth === k)) return k;
+  }
+  return null;
+}
+
+function seasonActive() {
+  return seasonPlanValid() &&
+    (nextSeasonMonth('different') !== null || nextSeasonMonth('similar') !== null);
+}
+
+// 같은 시즌 월의 반대 모드 회차
+function seasonPairRound(month, mode) {
+  const other = mode === 'different' ? 'similar' : 'different';
+  return seasonRounds().find(r => r.mode === other && r.seasonMonth === month) || null;
+}
+
+function seasonCountsMap() {
+  const counts = {};
+  MEMBERS.forEach(m => counts[m.name] = 0);
+  seasonRounds().forEach(r => r.teams.forEach(t => t.members.forEach(mm => {
+    if (mm && counts[mm.name] !== undefined) counts[mm.name]++;
+  })));
+  return counts;
+}
+
+function seasonModeCountsMap(mode) {
+  const counts = {};
+  MEMBERS.forEach(m => counts[m.name] = 0);
+  seasonRounds().filter(r => r.mode === mode).forEach(r =>
+    r.teams.forEach(t => t.members.forEach(mm => {
+      if (mm && counts[mm.name] !== undefined) counts[mm.name]++;
+    }))
+  );
+  return counts;
+}
+
+function seasonRestedSet() {
+  return new Set(seasonRounds().map(r => r.restedName).filter(Boolean));
+}
+
+// 휴식자 선정: 오직 "아직 휴식 안 한 T2" 기준 (쿼터 필터를 쓰면 6월차에 데드락)
+function pickSeasonRester() {
+  const rested = seasonRestedSet();
+  const cands = MEMBERS.filter(m => m.tier === SEASON.restTier && !rested.has(m.name));
+  return cands.length ? randomChoice(cands).name : null;
+}
+
+// 이번 시즌 월 출석 가능자: 쿼터 미달 + 휴식자 아님 + 같은 달 기출석 아님
+function seasonMonthAttendees(month, restedName) {
+  const counts = seasonCountsMap();
+  const attended = new Set();
+  seasonRounds().filter(r => r.seasonMonth === month).forEach(r =>
+    r.teams.forEach(t => t.members.forEach(mm => { if (mm) attended.add(mm.name); }))
+  );
+  return MEMBERS.filter(m =>
+    counts[m.name] < quotaOf(m) &&
+    m.name !== restedName &&
+    !attended.has(m.name)
+  );
+}
+
+// 직전(가장 높은 월) 같은 모드 시즌 회차 멤버 — 소프트 쿨다운용
+function lastSeasonRoundMembers(mode) {
+  const rounds = seasonRounds().filter(r => r.mode === mode)
+    .sort((a, b) => a.seasonMonth - b.seasonMonth);
+  if (rounds.length === 0) return new Set();
+  const names = new Set();
+  rounds[rounds.length - 1].teams.forEach(t => t.members.forEach(mm => { if (mm) names.add(mm.name); }));
+  return names;
+}
+
+// 소프트 가중치: 낮을수록 우선. 같은 모드 노출 횟수 + 직전 회차 출석 페널티
+function seasonSoftWeights(pool, mode) {
+  const mc = seasonModeCountsMap(mode);
+  const cd = lastSeasonRoundMembers(mode);
+  const w = {};
+  pool.forEach(m => { w[m.name] = mc[m.name] + (cd.has(m.name) ? 0.6 : 0); });
+  return w;
+}
+
+// MIX 배치 백트래킹: 3팀 × 4컬럼, 팀 내 티어 전부 다름 + 컬럼 그룹 매칭.
+// bandQuota 지정 시 선택과 배치를 결합 (밴드별 정확히 quota명 선발 —
+// "선뽑고 후배치"는 61~63% 실패하므로 반드시 결합 백트래킹이어야 함).
+// 주의: 이 탐색은 완전(complete)하므로 한 번 false면 재시작해도 false —
+// maxRestarts는 사실상 1이면 충분하고, 노드 예산은 손상된 이력으로 인한
+// 비정상 상태에서 브라우저가 멈추는 것을 막는 안전장치.
+function arrangeMixSeason(pool, bandQuota, weights, maxRestarts) {
+  // 슬롯 순서: 팀별로 빡빡한 컬럼부터 (정보보호PMO → 기획 → 운영 → 잔여)
+  const colOrder = [COLUMNS[2], COLUMNS[0], COLUMNS[1], COLUMNS[3]];
+  const slots = [];
+  for (let t = 0; t < 3; t++) for (const col of colOrder) slots.push({ team: t, col });
+  const NODE_BUDGET = 300000;
+
+  for (let attempt = 0; attempt < (maxRestarts || 1); attempt++) {
+    const used = new Set();
+    const teamTiers = [new Set(), new Set(), new Set()];
+    const bandLeft = bandQuota ? [...bandQuota] : null;
+    const picked = [];
+    let nodes = 0;
+
+    // 가중치 + 지터로 후보 순서 결정 (시도마다 새 지터)
+    const jitter = {};
+    pool.forEach(m => {
+      jitter[m.name] = (weights ? (weights[m.name] || 0) : 0) + Math.random() * 1.2;
+    });
+
+    const bt = (idx) => {
+      if (++nodes > NODE_BUDGET) return false;
+      if (idx === slots.length) return true;
+      const { team, col } = slots[idx];
+      const cands = pool.filter(m =>
+        !used.has(m.name) &&
+        !teamTiers[team].has(m.tier) &&
+        (col.leftover || col.groups.includes(m.group)) &&
+        (!bandLeft || bandLeft[bandOf(m)] > 0)
+      ).sort((a, b) => jitter[a.name] - jitter[b.name]);
+
+      for (const c of cands) {
+        used.add(c.name);
+        teamTiers[team].add(c.tier);
+        if (bandLeft) bandLeft[bandOf(c)]--;
+        picked.push({ ...c, team, slotCol: col.key });
+        if (bt(idx + 1)) return true;
+        picked.pop();
+        if (bandLeft) bandLeft[bandOf(c)]++;
+        teamTiers[team].delete(c.tier);
+        used.delete(c.name);
+      }
+      return false;
+    };
+
+    if (bt(0)) {
+      const teams = [[], [], []];
+      picked.forEach(p => teams[p.team].push(p));
+      return teams;
+    }
+    if (nodes > NODE_BUDGET) return null; // 예산 초과 — 재시작해도 동일하므로 즉시 중단
+  }
+  return null;
+}
+
+// 시즌 MIX 추첨
+function drawMixSeason() {
+  const month = nextSeasonMonth('different');
+  if (!month) return { error: '연간 플랜의 MIX 6회차가 모두 완료되었습니다. PEER로 진행해주세요.' };
+
+  const pair = seasonPairRound(month, 'different');
+  const restedName = pair ? pair.restedName : pickSeasonRester();
+  const attendees = seasonMonthAttendees(month, restedName);
+
+  let bandQuota = null;
+  if (pair) {
+    // 같은 달 PEER가 이미 확정 → MIX 멤버십은 여집합 12명으로 강제
+    if (attendees.length !== TEAM_SIZE * 3) {
+      return { error: '시즌 이력이 일관되지 않습니다 (여집합 인원 오류). 이력 탭에서 해당 월을 확인해주세요.' };
+    }
+  } else {
+    const bandAttending = POOLS.map(() => 0);
+    attendees.forEach(m => bandAttending[bandOf(m)]++);
+    bandQuota = bandAttending.map(n => n - TEAM_SIZE); // PEER 여집합이 정확히 4명씩 남도록
+    if (bandQuota.some(q => q < 0)) {
+      return { error: '시즌 이력이 일관되지 않습니다 (밴드 인원 부족). 이력 탭을 확인해주세요.' };
+    }
+  }
+
+  const weights = seasonSoftWeights(attendees, 'different');
+  const arranged = arrangeMixSeason(attendees, bandQuota, weights, 2);
+  if (!arranged) return { error: '팀 배치에 실패했습니다. 다시 SPIN 해주세요.' };
+
+  const teams = arranged.map((t, i) => ({
+    teamLabel: `${i + 1}팀`,
+    members: COLUMNS.map(c => t.find(mm => mm.slotCol === c.key)).filter(Boolean),
+  }));
+  return { mode: 'different', teams, season: SEASON.id, seasonMonth: month, restedName };
+}
+
+// PEER 표시용 컬럼 배정: 4명 ↔ 4컬럼, 그룹 불일치 최소 순열 (동률 시 랜덤)
+function assignPeerColumns(members) {
+  const perms = [];
+  const build = (rest, acc) => {
+    if (rest.length === 0) { perms.push(acc); return; }
+    rest.forEach((v, i) => build(rest.slice(0, i).concat(rest.slice(i + 1)), [...acc, v]));
+  };
+  build([0, 1, 2, 3], []);
+
+  let best = null, bestMis = Infinity;
+  for (const p of shuffle(perms)) {
+    let mis = 0;
+    p.forEach((mi, ci) => {
+      const col = COLUMNS[ci];
+      if (!col.leftover && !col.groups.includes(members[mi].group)) mis++;
+    });
+    if (mis < bestMis) { bestMis = mis; best = p; }
+  }
+  return COLUMNS.map((col, ci) => {
+    const m = members[best[ci]];
+    const off = !col.leftover && !col.groups.includes(m.group);
+    return off ? { ...m, slotCol: col.key, offColumn: true } : { ...m, slotCol: col.key };
+  });
+}
+
+// PEER 먼저 뽑는 경우의 밴드 선발: 여집합 MIX가 배치 가능해야 함.
+// 티어 카운트 제약(여집합 티어 ≤3)만으로는 72~77%에 그치므로
+// 여집합 실배치 검사를 통과할 때까지 재선발 (전수조사 기준 해는 항상 존재).
+function selectPeerBands(byBand, attendees) {
+  const pcs = seasonModeCountsMap('similar');
+  const cd = lastSeasonRoundMembers('similar');
+
+  for (let attempt = 0; attempt < 150; attempt++) {
+    const selected = [];
+    let ok = true;
+    for (let b = 0; b < POOLS.length; b++) {
+      const band = byBand[b];
+      const keys = {};
+      band.forEach(m => {
+        keys[m.name] = pcs[m.name] + (cd.has(m.name) ? 0.6 : 0) + Math.random() * 1.2;
+      });
+      const order = [...band].sort((a, b2) => keys[a.name] - keys[b2.name]);
+
+      // 여집합 MIX의 티어별 ≤3 보장: 티어별 (출석수 − 3)명 최소 선발
+      const tierCnt = {};
+      band.forEach(m => { tierCnt[m.tier] = (tierCnt[m.tier] || 0) + 1; });
+      const take = [];
+      Object.keys(tierCnt).forEach(t => {
+        const need = Math.max(0, tierCnt[t] - 3);
+        order.filter(m => m.tier === t).slice(0, need).forEach(m => take.push(m));
+      });
+      for (const m of order) {
+        if (take.length >= TEAM_SIZE) break;
+        if (!take.includes(m)) take.push(m);
+      }
+      if (take.length !== TEAM_SIZE) { ok = false; break; }
+      selected.push(take);
+    }
+    if (!ok) continue;
+
+    const selNames = new Set(selected.flat().map(m => m.name));
+    const complement = attendees.filter(m => !selNames.has(m.name));
+    // 완전 탐색이므로 1회 검사로 충분 (재시작은 동일 결과만 재탐색)
+    if (arrangeMixSeason(complement, null, null, 1)) return selected;
+  }
+  return null;
+}
+
+// 시즌 PEER 추첨
+function drawPeerSeason() {
+  const month = nextSeasonMonth('similar');
+  if (!month) return { error: '연간 플랜의 PEER 6회차가 모두 완료되었습니다. MIX로 진행해주세요.' };
+
+  const pair = seasonPairRound(month, 'similar');
+  const restedName = pair ? pair.restedName : pickSeasonRester();
+  const attendees = seasonMonthAttendees(month, restedName);
+
+  const byBand = POOLS.map(() => []);
+  attendees.forEach(m => byBand[bandOf(m)].push(m));
+
+  let bands;
+  if (pair) {
+    // 같은 달 MIX가 이미 확정 → PEER 멤버십은 여집합으로 강제 (밴드별 정확히 4명)
+    if (byBand.some(b => b.length !== TEAM_SIZE)) {
+      return { error: '시즌 이력이 일관되지 않습니다 (여집합 인원 오류). 이력 탭에서 해당 월을 확인해주세요.' };
+    }
+    bands = byBand;
+  } else {
+    bands = selectPeerBands(byBand, attendees);
+    if (!bands) return { error: '팀 선발에 실패했습니다. 다시 SPIN 해주세요.' };
+  }
+
+  const teams = POOLS.map((pool, b) => {
+    if (pool.allRandom) {
+      return {
+        teamLabel: pool.name, poolName: pool.name,
+        members: shuffle(bands[b]).map(m => ({ ...m, slotCol: null, allRandom: true })),
+      };
+    }
+    return { teamLabel: pool.name, poolName: pool.name, members: assignPeerColumns(bands[b]) };
+  });
+  return { mode: 'similar', teams, season: SEASON.id, seasonMonth: month, restedName };
+}
+
+// 다음 예정 회차 라벨 (더 낮은 월의 빠진 모드, 같으면 MIX 우선)
+function nextSeasonLabel() {
+  const nm = nextSeasonMonth('different');
+  const np = nextSeasonMonth('similar');
+  if (nm === null && np === null) return null;
+  if (np === null || (nm !== null && nm <= np)) return `${SEASON.monthLabels[nm - 1]} MIX`;
+  return `${SEASON.monthLabels[np - 1]} PEER`;
+}
+
+// =============================================================
 // 조장 선발 — 각 팀에서 랜덤 1명
 // =============================================================
 function pickLeaders(teams) {
@@ -376,6 +724,17 @@ async function animateDraw(result) {
               }
               flashScreen(0.16, '#00e8ff');
               lockBurst(drum, '#00e8ff', 18);
+              tickShake(drum, 0.6);
+              resolve();
+            } else if (member.offColumn) {
+              // 시즌 PEER 교차 배치 — 컬럼 그룹과 다른 멤버 (그린으로 표시)
+              drum.classList.add('locked-leftover');
+              if (reelWrap) {
+                const label = reelWrap.querySelector('.reel-label');
+                if (label) label.textContent = `${col.label} · ${GROUP_LABEL[member.group]}`;
+              }
+              flashScreen(0.16, '#00ff9d');
+              lockBurst(drum, '#00ff9d', 18);
               tickShake(drum, 0.6);
               resolve();
             } else if (col.leftover) {
@@ -570,6 +929,14 @@ function renderResults(result) {
   const titleEl = document.getElementById('resultsTitle');
   if (titleEl) titleEl.textContent = `오늘의 회식 멤버 ${headcount}명이 결정되었습니다`;
 
+  // 시즌 회차면 월·휴식자 표시
+  const subTitleEl = document.querySelector('.results-sub');
+  if (subTitleEl) {
+    subTitleEl.textContent = result.season
+      ? `${SEASON.monthLabels[result.seasonMonth - 1]} ${result.mode === 'different' ? 'MIX' : 'PEER'} · 이번 달 휴식 😴 ${result.restedName || '—'}`
+      : 'FATE HAS SPOKEN';
+  }
+
   container.innerHTML = result.teams.map((team, idx) => `
     <div class="result-team">
       <div class="result-team-header">
@@ -580,9 +947,9 @@ function renderResults(result) {
       </div>
       <div class="result-members">
         ${team.members.map(m => m ? `
-          <div class="result-member ${m.allRandom ? 'random' : (m.slotCol === '잔여' ? 'leftover' : '')} ${leaders[idx] === m.name ? 'is-leader' : ''}" data-name="${m.name}">
+          <div class="result-member ${m.allRandom ? 'random' : (m.slotCol === '잔여' || m.offColumn ? 'leftover' : '')} ${leaders[idx] === m.name ? 'is-leader' : ''}" data-name="${m.name}">
             ${leaders[idx] === m.name ? `<div class="rm-leader-crown">♛</div>` : ''}
-            ${m.allRandom ? `<div class="rm-sub-badge random">🎲 올랜덤</div>` : (m.slotCol === '잔여' ? `<div class="rm-sub-badge leftover">잔여 통합</div>` : '')}
+            ${m.allRandom ? `<div class="rm-sub-badge random">🎲 올랜덤</div>` : (m.slotCol === '잔여' ? `<div class="rm-sub-badge leftover">잔여 통합</div>` : (m.offColumn ? `<div class="rm-sub-badge leftover">교차 배치</div>` : ''))}
             <div class="rm-group">${GROUP_LABEL[m.group]}</div>
             <div class="rm-name">${m.name}</div>
             <div class="rm-title">${m.title} · ${TIER_LABEL[m.tier]}</div>
@@ -624,7 +991,19 @@ async function handleSpin() {
   const spinBtn = document.getElementById('spinBtn');
   spinBtn.disabled = true;
 
-  const result = currentMode === 'different' ? drawDifferentMode() : drawSimilarMode();
+  let result;
+  if (seasonActive()) {
+    result = currentMode === 'different' ? drawMixSeason() : drawPeerSeason();
+    if (result.error) {
+      showToast(result.error);
+      updateStatus('대기', 'SPIN을 눌러주세요');
+      spinning = false;
+      spinBtn.disabled = false;
+      return;
+    }
+  } else {
+    result = currentMode === 'different' ? drawDifferentMode() : drawSimilarMode();
+  }
   result.leaders = pickLeaders(result.teams);
   state.pendingResult = result;
 
@@ -650,13 +1029,20 @@ function handleConfirm() {
 
   const now = new Date();
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  state.history.push({
+  const record = {
     roundNum: getCurrentRoundNumber(),
     mode: state.pendingResult.mode,
     date: dateStr,
     teams: state.pendingResult.teams,
     leaders: state.pendingResult.leaders || [],
-  });
+  };
+  // 시즌 회차는 페어링·쿼터 계산용 메타를 함께 저장 (휴식자는 양쪽 회차에 모두 기록)
+  if (state.pendingResult.season) {
+    record.season = state.pendingResult.season;
+    record.seasonMonth = state.pendingResult.seasonMonth;
+    record.restedName = state.pendingResult.restedName;
+  }
+  state.history.push(record);
 
   state.pendingResult = null;
   saveState();
@@ -714,6 +1100,21 @@ function updateRoundInfo() {
   const dateStr = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, '0')}.${String(now.getDate()).padStart(2, '0')}`;
   document.getElementById('roundDate').textContent = dateStr;
   document.getElementById('confirmedCount').textContent = state.history.length;
+
+  // 연간 플랜 진행도
+  const subEl = document.getElementById('confirmedSub');
+  if (subEl) {
+    if (seasonPlanValid()) {
+      const done = seasonRounds().length;
+      const total = SEASON.months * 2;
+      const next = nextSeasonLabel();
+      subEl.textContent = next
+        ? `연간 플랜 ${done}/${total} · 다음 ${next}`
+        : `연간 플랜 ${SEASON.label} 완료 ✓`;
+    } else {
+      subEl.textContent = '지금까지 확정된 회차';
+    }
+  }
 }
 
 function updateStatus(label, sub) {
@@ -741,7 +1142,7 @@ function renderHistory() {
               <div class="hc-round">#${round.roundNum}</div>
               <div class="hc-mode ${round.mode}">${round.mode === 'different' ? 'MIX' : 'PEER'}</div>
             </div>
-            <div class="hc-date">${round.date}</div>
+            <div class="hc-date">${round.season ? `${SEASON.monthLabels[round.seasonMonth - 1]} · ` : ''}${round.date}${round.restedName ? ` · 휴식 ${round.restedName}` : ''}</div>
             <button class="hc-delete" data-idx="${idx}" title="이 회차 삭제" aria-label="이 회차 삭제">🗑 삭제</button>
           </div>
           <div class="history-card-summary">
@@ -774,11 +1175,19 @@ function deleteRound(idx) {
   if (!round) return;
 
   const modeLabel = round.mode === 'different' ? 'MIX' : 'PEER';
-  if (!confirm(`#${round.roundNum} (${modeLabel} · ${round.date}) 회차를 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`)) return;
+  let msg = `#${round.roundNum} (${modeLabel} · ${round.date}) 회차를 삭제할까요?\n삭제하면 되돌릴 수 없습니다.`;
+  if (round.season && seasonPairRound(round.seasonMonth, round.mode)) {
+    msg += `\n\n※ 같은 달(${SEASON.monthLabels[round.seasonMonth - 1]}) 반대 모드 회차가 남아 있으면,\n다시 뽑아도 멤버 구성은 동일하게 강제됩니다 (팀 배치만 변경).\n멤버를 바꾸려면 그 달 두 회차를 모두 삭제하세요.`;
+  }
+  if (!confirm(msg)) return;
 
   state.history.splice(idx, 1);
   // 번호 재정렬
   state.history.forEach((r, i) => { r.roundNum = i + 1; });
+  // 삭제 전 컨텍스트(시즌 월/휴식자)로 계산된 대기 결과가 확정되는 것 방지
+  state.pendingResult = null;
+  hideResults();
+  document.getElementById('spinBtn').textContent = 'SPIN ↻';
   saveState();
 
   showToast('회차가 삭제되었습니다');
@@ -792,26 +1201,30 @@ function deleteRound(idx) {
 // =============================================================
 function renderMembers() {
   const counts = getSelectionCounts();
+  const seasonOn = seasonPlanValid();
+  // 시즌 중에는 연간 쿼터 기준(시즌 회차만 집계)으로 표시 — 기존 이력은 보존하되 계산에서 제외
+  const viewCounts = seasonOn ? seasonCountsMap() : counts;
   const total = state.history.length;
-  const all = Object.values(counts);
+  const all = Object.values(viewCounts);
   const max = Math.max(0, ...all);
   const min = total > 0 ? Math.min(...all) : 0;
-  const most = Object.entries(counts).filter(([n, c]) => c === max && c > 0).map(([n]) => n).join(', ') || '—';
-  const least = total > 0 ? Object.entries(counts).filter(([n, c]) => c === min).map(([n]) => n).slice(0, 3).join(', ') : '—';
+  const most = Object.entries(viewCounts).filter(([n, c]) => c === max && c > 0).map(([n]) => n).join(', ') || '—';
+  const least = total > 0 ? Object.entries(viewCounts).filter(([n, c]) => c === min).map(([n]) => n).slice(0, 3).join(', ') : '—';
+  const seasonDone = seasonRounds().length;
 
   document.getElementById('statsBar').innerHTML = `
     <div class="stat-cell">
-      <div class="stat-label">TOTAL ROUNDS</div>
-      <div class="stat-value">${total}</div>
-      <div class="stat-sub">확정된 회차</div>
+      <div class="stat-label">${seasonOn ? 'PLAN ROUNDS' : 'TOTAL ROUNDS'}</div>
+      <div class="stat-value">${seasonOn ? `${seasonDone}/${SEASON.months * 2}` : total}</div>
+      <div class="stat-sub">${seasonOn ? `연간 플랜 ${SEASON.label} · 전체 확정 ${total}회차` : '확정된 회차'}</div>
     </div>
     <div class="stat-cell">
-      <div class="stat-label">MAX PICKS</div>
+      <div class="stat-label">${seasonOn ? 'PLAN MAX' : 'MAX PICKS'}</div>
       <div class="stat-value">${max}</div>
       <div class="stat-sub">${most.length > 30 ? most.slice(0, 30) + '...' : most}</div>
     </div>
     <div class="stat-cell">
-      <div class="stat-label">MIN PICKS</div>
+      <div class="stat-label">${seasonOn ? 'PLAN MIN' : 'MIN PICKS'}</div>
       <div class="stat-value">${min}</div>
       <div class="stat-sub">${least.length > 30 ? least.slice(0, 30) + '...' : least}</div>
     </div>
@@ -833,9 +1246,9 @@ function renderMembers() {
           <div class="tier-section">
             <div class="tier-label">${t} · ${TIER_LABEL[t]}</div>
             ${tm.map(m => `
-              <div class="member-chip ${LEADERS.has(m.name) ? 'is-leader' : ''} ${m.name === SELF ? 'is-self' : ''} ${counts[m.name] > 0 ? 'has-count' : ''}">
+              <div class="member-chip ${LEADERS.has(m.name) ? 'is-leader' : ''} ${m.name === SELF ? 'is-self' : ''} ${viewCounts[m.name] > 0 ? 'has-count' : ''}" title="${seasonOn ? `누적 ${counts[m.name]}회` : ''}">
                 <span class="mc-name">${m.name}</span>
-                <span class="mc-count">${counts[m.name]}회</span>
+                <span class="mc-count">${seasonOn ? `${viewCounts[m.name]}/${quotaOf(m)}` : `${counts[m.name]}회`}</span>
               </div>
             `).join('')}
           </div>
@@ -921,6 +1334,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // =============================================================
 function init() {
   loadState();
+  // 로스터가 연간 플랜 전제와 다르면 (인사 변경 등) 레거시 추첨으로 폴백됨을 알림
+  if (!seasonPlanValid()) {
+    setTimeout(() => showToast('⚠ 연간 플랜 비활성: 로스터가 플랜 전제와 다릅니다 — 일반 추첨으로 동작합니다'), 600);
+  }
   updateRoundInfo();
   renderTeamRows();
   renderHistory();
