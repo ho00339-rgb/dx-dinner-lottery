@@ -177,6 +177,14 @@
 
   <!-- HISTORY TAB -->
   <div class="tab-panel" id="tab-history">
+    <div class="history-share">
+      <div class="hs-text">
+        이력은 이 브라우저(localStorage)에만 저장됩니다. 다른 사람에게도 보이게 하려면
+        <b>공유 파일을 내보내</b> 저장소의 <code>history-seed.js</code>를 덮어쓰고 push 하세요.
+        회차를 추가·삭제했다면 다시 내보내야 반영됩니다.
+      </div>
+      <button class="btn btn-ghost" id="exportSeedBtn">📤 공유 파일 내보내기</button>
+    </div>
     <div id="historyContent"></div>
   </div>
 
@@ -191,8 +199,9 @@
 <canvas id="confetti"></canvas>
 <div class="toast" id="toast"></div>
 
-<!-- 데이터 먼저, 그 다음 앱 로직 -->
+<!-- 데이터 → 공유 이력 시드 → 앱 로직 순서로 로드 -->
 <script src="data.js"></script>
+<script src="history-seed.js"></script>
 <script src="app.js"></script>
 
 </body>

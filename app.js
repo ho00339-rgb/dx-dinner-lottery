@@ -9,6 +9,7 @@ const STORAGE_KEY = 'dx_dinner_lottery_v3';
 let state = {
   history: [],
   pendingResult: null,
+  deletedSeedKeys: [], // 공유 시드에서 로컬 삭제한 회차 키 (재병합 방지)
 };
 
 let currentMode = 'different'; // 'different' = MIX, 'similar' = PEER
@@ -28,8 +29,104 @@ function loadState() {
 
 function saveState() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ history: state.history }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      history: state.history,
+      deletedSeedKeys: state.deletedSeedKeys || [],
+    }));
   } catch (e) { console.error(e); }
+}
+
+// =============================================================
+// 공유 이력 시드 병합 (history-seed.js)
+//
+// localStorage는 브라우저별 저장이라 URL을 공유해도 이력은 공유되지 않음.
+// 확정 이력을 history-seed.js로 내보내 저장소에 push하면(이력 탭 버튼),
+// 모든 접속자가 로드 시 시드를 자기 로컬 이력과 병합해서 같은 이력을 봄.
+//   - 같은 회차 판별 키: 시즌 회차는 (시즌·월·모드), 그 외에는 확정 시 부여된 id
+//   - 키가 겹치면 로컬 버전 우선 (관리자가 다시 뽑은 회차 보호)
+//   - 로컬에서 삭제한 시드 회차는 deletedSeedKeys(묘비)로 복원 차단
+// =============================================================
+function seedRounds() {
+  return (typeof HISTORY_SEED !== 'undefined' && Array.isArray(HISTORY_SEED)) ? HISTORY_SEED : [];
+}
+
+function genRoundId() {
+  return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function roundKey(r) {
+  if (r.season && r.seasonMonth) return `S|${r.season}|${r.seasonMonth}|${r.mode}`;
+  if (r.id) return `I|${r.id}`;
+  const names = [];
+  (r.teams || []).forEach(t => t.members.forEach(m => { if (m) names.push(m.name); }));
+  return `C|${r.mode}|${r.date}|${names.sort().join(',')}`;
+}
+
+// id 없는 기존 레코드에 id 부여 (시드 병합의 안정적 동일성 판별용)
+function ensureRoundIds() {
+  let changed = false;
+  state.history.forEach(r => {
+    if (!r.id) { r.id = genRoundId(); changed = true; }
+  });
+  return changed;
+}
+
+function mergeSeedHistory() {
+  const seed = seedRounds();
+  if (!seed.length) return false;
+
+  const tombstones = new Set(state.deletedSeedKeys || []);
+  const localByKey = new Map();
+  state.history.forEach(r => localByKey.set(roundKey(r), r));
+
+  const merged = [];
+  const taken = new Set();
+  for (const sr of seed) {
+    const k = roundKey(sr);
+    const local = localByKey.get(k);
+    if (tombstones.has(k)) {
+      // 로컬에서 삭제했던 회차 — 다시 뽑은 로컬 버전이 있으면 그것만 유지
+      if (local) { merged.push(local); taken.add(k); }
+      continue;
+    }
+    merged.push(local || JSON.parse(JSON.stringify(sr)));
+    taken.add(k);
+  }
+  // 아직 시드에 없는 로컬 회차(미공유 최신분)는 뒤에 그대로 유지
+  for (const r of state.history) {
+    if (!taken.has(roundKey(r))) merged.push(r);
+  }
+  merged.forEach((r, i) => { r.roundNum = i + 1; });
+
+  const changed = JSON.stringify(merged) !== JSON.stringify(state.history);
+  state.history = merged;
+  return changed;
+}
+
+// 현재 이력을 history-seed.js 파일로 다운로드 — 저장소에 덮어쓰고 push하면 공유 완료
+function exportSeedFile() {
+  if (state.history.length === 0) {
+    showToast('내보낼 이력이 없습니다');
+    return;
+  }
+  const content =
+    '// =============================================================\n' +
+    '// 공유 이력 시드 — 직접 수정하지 마세요 (자동 생성 파일)\n' +
+    '// 이력 탭의 "공유 파일 내보내기"로 생성됨.\n' +
+    '// 저장소의 history-seed.js를 이 파일로 덮어쓰고 push 하면\n' +
+    '// 모든 접속자가 같은 이력을 봅니다.\n' +
+    '// =============================================================\n' +
+    'const HISTORY_SEED = ' + JSON.stringify(state.history, null, 2) + ';\n';
+  const blob = new Blob([content], { type: 'text/javascript' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'history-seed.js';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast('history-seed.js 다운로드됨 — 저장소에 덮어쓰고 push 하세요');
 }
 
 function getCurrentRoundNumber() { return state.history.length + 1; }
@@ -548,6 +645,118 @@ function nextSeasonLabel() {
 }
 
 // =============================================================
+// 이력 자동 복구 — 정원(4명) 미달로 저장된 팀에 규칙에 맞는 인원을 랜덤 보충
+//
+// 과거 버전의 쿨다운/후보 부족으로 슬롯이 빈 채 확정된 회차 패치용.
+// 보충 후보 규칙:
+//   - 그 회차에 이미 없는 사람 (회차 내 중복 금지)
+//   - 시즌 회차면: 그 달 휴식자 제외 + 같은 달 반대 모드 출석자 제외 (월간 중복 금지)
+//   - MIX: 팀 내 티어 전부 다름 + (시즌이면) 밴드 쿼터(상7/중4/하1) 유지
+//   - PEER: 같은 묶음(상/중/하) 티어만, 하위팀은 올랜덤 형식 유지
+//   - 빈 컬럼의 그룹 매칭 우선 (PEER는 불일치 시 교차 배치로 허용)
+//   - 앞뒤 같은 모드 회차 출석자는 가능하면 회피 (쿨다운 존중, 소프트)
+// =============================================================
+function repairHistory() {
+  const fixes = [];
+  state.history.forEach((round, idx) => {
+    round.teams.forEach(team => {
+      let guard = 0;
+      while (team.members.filter(Boolean).length < TEAM_SIZE && guard++ < TEAM_SIZE) {
+        const member = repairPickFor(round, idx, team);
+        if (!member) break;
+        team.members.push(member);
+        if (!member.allRandom) {
+          // 표시 순서를 컬럼 순서로 재정렬
+          team.members = COLUMNS
+            .map(c => team.members.find(m => m && m.slotCol === c.key))
+            .filter(Boolean);
+        }
+        fixes.push(`#${round.roundNum} ${team.teamLabel}에 ${member.name} 보충`);
+      }
+    });
+  });
+  return fixes;
+}
+
+function repairPickFor(round, idx, team) {
+  const usedInRound = new Set();
+  round.teams.forEach(t => t.members.forEach(m => { if (m) usedInRound.add(m.name); }));
+  let pool = MEMBERS.filter(m => !usedInRound.has(m.name));
+
+  if (round.season) {
+    if (round.restedName) pool = pool.filter(m => m.name !== round.restedName);
+    const sameMonth = new Set();
+    state.history.forEach(r => {
+      if (r !== round && r.season === round.season && r.seasonMonth === round.seasonMonth) {
+        r.teams.forEach(t => t.members.forEach(mm => { if (mm) sameMonth.add(mm.name); }));
+      }
+    });
+    pool = pool.filter(m => !sameMonth.has(m.name));
+  }
+
+  if (round.mode === 'similar') {
+    const poolDef = POOLS.find(p => p.name === team.poolName) ||
+      POOLS.find(p => team.members.some(mm => mm && p.tiers.includes(mm.tier)));
+    if (!poolDef) return null;
+    pool = pool.filter(m => poolDef.tiers.includes(m.tier));
+    if (poolDef.allRandom) {
+      if (!pool.length) return null;
+      const pick = randomChoice(repairCooldownPrefer(pool, idx, round.mode));
+      return { ...pick, slotCol: null, allRandom: true };
+    }
+  } else {
+    const usedTiers = new Set(team.members.filter(Boolean).map(m => m.tier));
+    pool = pool.filter(m => !usedTiers.has(m.tier));
+    if (round.season) {
+      // 시즌 MIX는 밴드 쿼터를 지켜야 같은 달 PEER 여집합이 깨지지 않음
+      const byName = {};
+      MEMBERS.forEach(m => { byName[m.name] = m; });
+      const restBand = round.restedName && byName[round.restedName]
+        ? bandOf(byName[round.restedName]) : -1;
+      const bandCount = POOLS.map(() => 0);
+      round.teams.forEach(t => t.members.forEach(mm => { if (mm) bandCount[bandOf(mm)]++; }));
+      pool = pool.filter(m => {
+        const b = bandOf(m);
+        const bandSize = MEMBERS.filter(x => bandOf(x) === b).length;
+        const quota = bandSize - (b === restBand ? 1 : 0) - TEAM_SIZE;
+        return bandCount[b] < quota;
+      });
+    }
+  }
+
+  // 빈 컬럼 산출 — 빠듯한 그룹 컬럼 먼저, 잔여(전원 후보)는 마지막
+  const presentCols = new Set(team.members.filter(Boolean).map(m => m.slotCol));
+  const missingCols = COLUMNS.filter(c => !presentCols.has(c.key))
+    .sort((a, b) => (a.leftover ? 1 : 0) - (b.leftover ? 1 : 0));
+
+  for (const col of missingCols) {
+    const fit = pool.filter(m => col.leftover || col.groups.includes(m.group));
+    // MIX는 컬럼 그룹 엄수, PEER는 불일치 시 교차 배치(offColumn) 허용
+    const cands = fit.length ? fit : (round.mode === 'similar' ? pool : []);
+    if (!cands.length) continue;
+    const pick = randomChoice(repairCooldownPrefer(cands, idx, round.mode));
+    const member = { ...pick, slotCol: col.key };
+    if (!col.leftover && !col.groups.includes(pick.group)) member.offColumn = true;
+    return member;
+  }
+  return null;
+}
+
+// 앞뒤 같은 모드 회차 출석자는 가능하면 피함 (후보가 그것뿐이면 허용)
+function repairCooldownPrefer(cands, idx, mode) {
+  const adjacent = new Set();
+  const collect = r => r.teams.forEach(t => t.members.forEach(m => { if (m) adjacent.add(m.name); }));
+  for (let j = idx - 1; j >= 0; j--) {
+    if (state.history[j].mode === mode) { collect(state.history[j]); break; }
+  }
+  for (let j = idx + 1; j < state.history.length; j++) {
+    if (state.history[j].mode === mode) { collect(state.history[j]); break; }
+  }
+  const preferred = cands.filter(m => !adjacent.has(m.name));
+  return preferred.length ? preferred : cands;
+}
+
+// =============================================================
 // 조장 선발 — 각 팀에서 랜덤 1명
 // =============================================================
 function pickLeaders(teams) {
@@ -1042,6 +1251,7 @@ function handleConfirm() {
   const now = new Date();
   const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const record = {
+    id: genRoundId(), // 공유 시드 병합 시 동일 회차 판별용
     roundNum: getCurrentRoundNumber(),
     mode: state.pendingResult.mode,
     date: dateStr,
@@ -1192,6 +1402,12 @@ function deleteRound(idx) {
     msg += `\n\n※ 같은 달(${SEASON.monthLabels[round.seasonMonth - 1]}) 반대 모드 회차가 남아 있으면,\n다시 뽑아도 멤버 구성은 동일하게 강제됩니다 (팀 배치만 변경).\n멤버를 바꾸려면 그 달 두 회차를 모두 삭제하세요.`;
   }
   if (!confirm(msg)) return;
+
+  // 공유 시드에 있는 회차면 묘비 기록 — 다음 로드 때 시드에서 되살아나지 않도록
+  const key = roundKey(round);
+  if (seedRounds().some(sr => roundKey(sr) === key)) {
+    state.deletedSeedKeys = Array.from(new Set([...(state.deletedSeedKeys || []), key]));
+  }
 
   state.history.splice(idx, 1);
   // 번호 재정렬
@@ -1346,6 +1562,13 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // =============================================================
 function init() {
   loadState();
+  const idsAdded = ensureRoundIds();
+  const seedMerged = mergeSeedHistory();
+  const fixes = repairHistory();
+  if (idsAdded || seedMerged || fixes.length) saveState();
+  if (fixes.length) {
+    setTimeout(() => showToast(`🔧 미달 팀 자동 보충: ${fixes.join(' · ')}`), 900);
+  }
   // 로스터가 연간 플랜 전제와 다르면 (인사 변경 등) 레거시 추첨으로 폴백됨을 알림
   if (!seasonPlanValid()) {
     setTimeout(() => showToast('⚠ 연간 플랜 비활성: 로스터가 플랜 전제와 다릅니다 — 일반 추첨으로 동작합니다'), 600);
@@ -1368,6 +1591,10 @@ function init() {
     const btn = e.target.closest('.hc-delete');
     if (btn) deleteRound(parseInt(btn.dataset.idx, 10));
   });
+
+  // 공유 이력 파일 내보내기
+  const exportBtn = document.getElementById('exportSeedBtn');
+  if (exportBtn) exportBtn.addEventListener('click', exportSeedFile);
 }
 
 init();
