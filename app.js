@@ -103,12 +103,16 @@ function mergeSeedHistory() {
     taken.add(k);
   }
   // 아직 시드에 없는 로컬 회차(미공유 최신분)는 뒤에 그대로 유지.
-  // 단, 시드와 내용이 같은 회차(id만 다른 동일 회차)는 중복이므로 제외.
+  // 단, 시드와 내용이 같은 회차(id만 다른 동일 회차)와
+  // 시드가 대체했다고 선언한 옛 변형(HISTORY_SEED_SUPERSEDED)은 중복이므로 제외.
   const seedContents = new Set(
     seed.filter(sr => !tombstones.has(roundKey(sr))).map(roundContentKey)
   );
+  const superseded = (typeof HISTORY_SEED_SUPERSEDED !== 'undefined' && Array.isArray(HISTORY_SEED_SUPERSEDED))
+    ? new Set(HISTORY_SEED_SUPERSEDED) : new Set();
   for (const r of state.history) {
-    if (!taken.has(roundKey(r)) && !seedContents.has(roundContentKey(r))) merged.push(r);
+    const ck = roundContentKey(r);
+    if (!taken.has(roundKey(r)) && !seedContents.has(ck) && !superseded.has(ck)) merged.push(r);
   }
   merged.forEach((r, i) => { r.roundNum = i + 1; });
 
@@ -130,7 +134,13 @@ function exportSeedFile() {
     '// 저장소의 history-seed.js를 이 파일로 덮어쓰고 push 하면\n' +
     '// 모든 접속자가 같은 이력을 봅니다.\n' +
     '// =============================================================\n' +
-    'const HISTORY_SEED = ' + JSON.stringify(state.history, null, 2) + ';\n';
+    'const HISTORY_SEED = ' + JSON.stringify(state.history, null, 2) + ';\n' +
+    '\n// 대체된 옛 변형의 내용 키 — 옛 로컬 이력과의 중복 병합 방지\n' +
+    'const HISTORY_SEED_SUPERSEDED = ' + JSON.stringify(
+      (typeof HISTORY_SEED_SUPERSEDED !== 'undefined' && Array.isArray(HISTORY_SEED_SUPERSEDED))
+        ? HISTORY_SEED_SUPERSEDED : [],
+      null, 2
+    ) + ';\n';
   const blob = new Blob([content], { type: 'text/javascript' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

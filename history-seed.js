@@ -7,7 +7,8 @@
 // 저장소에 덮어쓰고 push 하면, 모든 접속자가 같은 이력을 보게 됩니다.
 //
 // 2026-06-11: 1~6회차는 로컬(file://)에서 확정된 이력의 스크린샷 기준 복원본.
-// #4 중위팀의 빈 운영 슬롯은 규칙상 유일 후보인 김혁중으로 보충됨.
+// #4 중위팀의 빈 운영 슬롯은 허성오(기획)를 교차 배치로 보충 (호연 결정 —
+// 유일한 컬럼 일치 후보였던 김혁중은 #2·#6 PEER 연속 출석이라 제외).
 // =============================================================
 const HISTORY_SEED = [
   {
@@ -105,7 +106,7 @@ const HISTORY_SEED = [
       ] },
       { teamLabel: '중위', poolName: '중위', members: [
         { name: '한희정', group: '기획', tier: 'T4', title: '대리', part: '과제발굴', slotCol: '기획' },
-        { name: '김혁중', group: '운영', tier: 'T5', title: '과장', part: 'ERP', slotCol: '운영' },
+        { name: '허성오', group: '기획', tier: 'T5', title: '과장', part: '', slotCol: '운영', offColumn: true },
         { name: '부병식', group: 'PMO', tier: 'T5', title: '과장', part: 'PMO', slotCol: '정보보호PMO' },
         { name: '정경화', group: 'PMO', tier: 'T4', title: '차장', part: 'PMO', slotCol: '잔여' },
       ] },
@@ -172,4 +173,11 @@ const HISTORY_SEED = [
     ],
     leaders: ['박영선', '윤재웅', '김어진'],
   },
+];
+
+// 대체된 옛 변형의 내용 키 — 옛 로컬(file://) 이력에 남은 #4의
+// "3명 버전"/"김혁중 보충 버전"이 시드와 중복 표시되지 않도록 병합 시 제거
+const HISTORY_SEED_SUPERSEDED = [
+  'similar|2026-06-11|김어진/김호연/최민준/하성우||김중현/남현태/최지훈/황지영||부병식/정경화/한희정',
+  'similar|2026-06-11|김어진/김호연/최민준/하성우||김중현/남현태/최지훈/황지영||김혁중/부병식/정경화/한희정',
 ];
