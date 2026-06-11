@@ -62,6 +62,16 @@ function roundKey(r) {
   return `C|${r.mode}|${r.date}|${names.sort().join(',')}`;
 }
 
+// 내용 기반 동일성 키 — id가 다르게 부여된 같은 회차(예: id 도입 전 로컬 이력 vs
+// 스크린샷 복원 시드)를 병합 시 중복으로 잡기 위한 보조 키
+function roundContentKey(r) {
+  const teams = (r.teams || [])
+    .map(t => t.members.filter(Boolean).map(m => m.name).sort().join('/'))
+    .sort()
+    .join('||');
+  return `${r.mode}|${r.date}|${teams}`;
+}
+
 // id 없는 기존 레코드에 id 부여 (시드 병합의 안정적 동일성 판별용)
 function ensureRoundIds() {
   let changed = false;
@@ -92,9 +102,13 @@ function mergeSeedHistory() {
     merged.push(local || JSON.parse(JSON.stringify(sr)));
     taken.add(k);
   }
-  // 아직 시드에 없는 로컬 회차(미공유 최신분)는 뒤에 그대로 유지
+  // 아직 시드에 없는 로컬 회차(미공유 최신분)는 뒤에 그대로 유지.
+  // 단, 시드와 내용이 같은 회차(id만 다른 동일 회차)는 중복이므로 제외.
+  const seedContents = new Set(
+    seed.filter(sr => !tombstones.has(roundKey(sr))).map(roundContentKey)
+  );
   for (const r of state.history) {
-    if (!taken.has(roundKey(r))) merged.push(r);
+    if (!taken.has(roundKey(r)) && !seedContents.has(roundContentKey(r))) merged.push(r);
   }
   merged.forEach((r, i) => { r.roundNum = i + 1; });
 
@@ -1563,8 +1577,11 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 function init() {
   loadState();
   const idsAdded = ensureRoundIds();
-  const seedMerged = mergeSeedHistory();
+  // 병합 전에 한 번 보충 — 미달 팀이 채워져야 시드와 내용 일치로 중복 제거됨
   const fixes = repairHistory();
+  const seedMerged = mergeSeedHistory();
+  // 병합으로 새로 들어온 시드 회차에 미달 팀이 있으면 마저 보충
+  fixes.push(...repairHistory());
   if (idsAdded || seedMerged || fixes.length) saveState();
   if (fixes.length) {
     setTimeout(() => showToast(`🔧 미달 팀 자동 보충: ${fixes.join(' · ')}`), 900);
